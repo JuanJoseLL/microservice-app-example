@@ -1,12 +1,13 @@
 # ---- Build Stage ----
-    FROM node:20-alpine AS build-stage
-    # Or node:8-alpine if you want to strictly match the old version (EOL, not recommended)
-    
+    FROM node:8-alpine AS build-stage
+
     WORKDIR /app
     
-    # Install Python and build tools needed by node-gyp (for node-sass)    
+    # Install Python 2 and build tools needed by node-gyp (for node-sass)
+    RUN apk add --no-cache python2 make g++
+    
     COPY package*.json ./
-    RUN npm install  # This should now find python3
+    RUN npm install
     COPY . .
     RUN npm run build
     
