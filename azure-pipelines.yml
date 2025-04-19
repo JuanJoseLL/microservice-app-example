@@ -83,7 +83,7 @@ stages:
       - task: Docker@2
         displayName: 'Build and Push $(imageName)'
         inputs:
-          containerRegistry: 'Azure-Service-Connection' # Your Service Connection name linked to Azure
+          containerRegistry: 'ACR-Service-Connection' # Your Service Connection name linked to Azure
           repository: '$(imageName)' # Use the matrix variable
           command: 'buildAndPush'
           Dockerfile: '$(Build.SourcesDirectory)/$(buildContext)/Dockerfile' # Use the matrix variable
@@ -139,7 +139,7 @@ stages:
               displayName: Create Namespace $(k8sNamespace)
               inputs:
                 action: 'createSecret' # Using apply with raw manifest for namespace
-                kubernetesServiceConnection: 'Azure-Service-Connection'
+                kubernetesServiceConnection: 'aks-prod-microAppProd-prod-pheasant-aks-apps-prod-1745099156012'
                 namespace: 'default' # Action runs in default, but creates the target namespace
                 manifests: |
                   apiVersion: v1
@@ -156,18 +156,18 @@ stages:
               displayName: Create/Update Image Pull Secret ($(k8sImagePullSecretName))
               inputs:
                 action: 'createSecret'
-                kubernetesServiceConnection: 'Azure-Service-Connection'
+                kubernetesServiceConnection: 'aks-prod-microAppProd-prod-pheasant-aks-apps-prod-1745099156012'
                 namespace: $(k8sNamespace) # Target the correct namespace
                 secretType: 'dockerRegistry'
                 secretName: $(k8sImagePullSecretName) # Defined in variables
-                dockerRegistryEndpoint: 'Azure-Service-Connection' # Service Connection linked to your ACR
+                dockerRegistryEndpoint: 'ACR-Service-Connection' # Service Connection linked to your ACR
                 force: true # Allow updates
 
             - task: KubernetesManifest@0
               displayName: Create/Update Redis Secret ($(k8sRedisSecretName))
               inputs:
                 action: 'createSecret'
-                kubernetesServiceConnection: 'Azure-Service-Connection'
+                kubernetesServiceConnection: 'aks-prod-microAppProd-prod-pheasant-aks-apps-prod-1745099156012'
                 namespace: $(k8sNamespace) # Target the correct namespace
                 secretType: 'generic'
                 secretName: $(k8sRedisSecretName) # Defined in variables
@@ -179,7 +179,7 @@ stages:
               displayName: Create/Update App Secrets (JWT) ($(k8sAppSecretName))
               inputs:
                 action: 'createSecret'
-                kubernetesServiceConnection: 'Azure-Service-Connection'
+                kubernetesServiceConnection: 'aks-prod-microAppProd-prod-pheasant-aks-apps-prod-1745099156012'
                 namespace: $(k8sNamespace) # Target the correct namespace
                 secretType: 'generic'
                 secretName: $(k8sAppSecretName) # Defined in variables
@@ -191,7 +191,7 @@ stages:
               displayName: Apply App ConfigMap
               inputs:
                 action: 'apply' # Use apply for ConfigMaps
-                kubernetesServiceConnection: 'Azure-Service-Connection'
+                kubernetesServiceConnection: 'aks-prod-microAppProd-prod-pheasant-aks-apps-prod-1745099156012'
                 namespace: $(k8sNamespace) # Target the correct namespace
                 # Apply the configmap file AFTER token replacement
                 manifests: '$(Build.SourcesDirectory)/$(k8sManifestPath)/app-configmap.yaml'
@@ -201,7 +201,7 @@ stages:
               displayName: Deploy Application Manifests
               inputs:
                 action: 'deploy' # Creates or updates resources based on manifests
-                kubernetesServiceConnection: 'Azure-Service-Connection'
+                kubernetesServiceConnection: 'aks-prod-microAppProd-prod-pheasant-aks-apps-prod-1745099156012'
                 namespace: $(k8sNamespace) # Deploy into the correct namespace
                 # Apply Deployments and Services (token replaced files)
                 manifests: |
