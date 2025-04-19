@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-deployment
+  namespace: #{k8sNamespace}#
+  labels:
+    app: frontend
+spec:
+  replicas: 2 # Frontend can often be scaled easily
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: #{acrName}#.azurecr.io/#{imageFrontend}#:#{Build.BuildId}#
+        ports:
+        - containerPort: 8080 # Must match PORT
+        env:
+        - name: PORT # Port the Node app listens on
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: FRONTEND_PORT
+        - name: AUTH_API_ADDRESS # Address of the K8s Service for Auth API
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: AUTH_API_ADDRESS
+        - name: TODOS_API_ADDRESS # Address of the K8s Service for Todos API
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: TODOS_API_ADDRESS
+      imagePullSecrets:
+      - name: #{k8sImagePullSecretName}#

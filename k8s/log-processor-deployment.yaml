@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: log-processor-deployment
+  namespace: #{k8sNamespace}#
+  labels:
+    app: log-processor
+spec:
+  replicas: 1 # Can scale if processing becomes a bottleneck
+  selector:
+    matchLabels:
+      app: log-processor
+  template:
+    metadata:
+      labels:
+        app: log-processor
+    spec:
+      containers:
+      - name: log-processor
+        image: #{acrName}#.azurecr.io/#{imageLogProcessor}#:#{Build.BuildId}#
+        env:
+        - name: REDIS_HOST # Read from the 'redis-secret' secret
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redisHost
+        - name: REDIS_PORT # Read from the ConfigMap
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: REDIS_PORT
+        - name: REDIS_CHANNEL # Read from the ConfigMap
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: REDIS_CHANNEL
+        # Note: The app might need the Redis Key too. If so, add:
+        # - name: REDIS_PASSWORD # Or whatever the app expects
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: redis-secret
+        #       key: redisKey
+      imagePullSecrets:
+      - name: #{k8sImagePullSecretName}#

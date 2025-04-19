@@ -1,258 +1,265 @@
-# azure-pipelines.yml
-
 trigger:
-- main # Trigger pipeline on commits to the main branch
+  branches:
+    include:
+    - dev
+    - master # Deploy main to prod, dev to dev environment
+  paths:
+    include: # Trigger only if app code or k8s manifests change
+    - 'auth-api/'
+    - 'users-api/'
+    - 'todos-api/'
+    - 'log-processor/'
+    - 'frontend/'
+    - 'k8s/'
+    - 'azure-pipelines-app.yml'
+    exclude:
+    - '**/*.md' # Exclude markdown changes
+
+pool:
+  vmImage: ubuntu-latest
 
 variables:
-  # --- Agent Pool ---
-  vmImageName: 'ubuntu-latest'
+  # Determine environment based on branch
+  - name: environment
+    ${{ if eq(variables['Build.SourceBranchName'], 'master') }}:
+      value: 'prod'
+    ${{ if eq(variables['Build.SourceBranchName'], 'dev') }}:
+      value: 'dev'
+  # Link to the variable group containing infra outputs
+  - group: app-variables-${{ variables.environment }} # e.g., app-variables-dev or app-variables-prod
 
-  # --- Azure Resources ---
-  azureSubscriptionConnection: 'YourAzureResourceManagerConnectionName' # Replace with your ARM Service Connection name
-  resourceGroup: 'YourResourceGroupName'        # Replace with your Resource Group name
-  azureLocation: 'eastus'                       # Replace with your Azure region
+  # Define image names consistently
+  - name: imageAuthApi
+    value: 'auth-api'
+  - name: imageUsersApi
+    value: 'users-api'
+  - name: imageTodosApi
+    value: 'todos-api'
+  - name: imageLogProcessor
+    value: 'log-processor'
+  - name: imageFrontend
+    value: 'frontend'
 
-  # --- ACR Details ---
-  acrServiceConnection: 'YourACRServiceConnectionName' # Replace with your ACR Service Connection name
-  acrName: 'youracrname'                      # Replace with your ACR name (e.g., myappacr)
-  # Derived ACR login server (used in multiple places)
-  acrLoginServer: '$(acrName).azurecr.io'
-  imageRepoPrefix: 'microservice-training'    # Prefix for image names in ACR
+  # Kubernetes details
+  - name: k8sNamespace
+    value: 'apps-$(environment)' # Deploy apps into a namespace per environment
+  - name: k8sImagePullSecretName
+    value: 'acr-secret'
+  - name: k8sRedisSecretName
+    value: 'redis-secret'
+  - name: k8sAppSecretName # Name for the JWT secret
+    value: 'app-secrets'
+  - name: k8sManifestPath
+    value: 'k8s' # Path to your kubernetes manifests in the repo
 
-  # --- ACI Deployment ---
-  aciDeploymentFile: 'aci-deployment.yml' # Path to your ACI yaml template
-  aciDnsNameLabel: 'my-todo-app-aci'      # Base DNS label for ACI (will be unique with build ID)
-
-  # --- AKS Deployment ---
-  aksClusterName: 'YourAKSClusterName'          # Replace with your AKS Cluster name
-  kubernetesServiceConnection: 'YourKubernetesServiceConnectionName' # Replace with your K8s Service Connection name
-  kubernetesManifestPath: 'kubernetes'      # Path to the folder containing K8s YAML templates
-  kubernetesNamespace: 'default'            # Target namespace in AKS
-
-  # --- Build Tag ---
-  # Use Build.BuildId for unique image tags per build
-  imageTag: '$(Build.BuildId)'
-
-  # --- Secrets (Define these as SECRET variables in the Pipeline UI for security!) ---
-  # It's recommended to store sensitive values like JWT secrets or DB passwords here or in Azure Key Vault
-  # Placeholder for demonstration - DEFINE AS SECRET IN UI
-  JWT_SECRET: 'DefineThisSecretInPipelineUI'
-  # ACR Credentials - these will be populated by the ACR service connection for ACI deployment task
-  # We don't need to define them explicitly here if using the service connection's identity
-
-# Use stages for better organization
 stages:
+# =========================================================================
+# Stage 1: Build and Push Docker Images
+# =========================================================================
 - stage: BuildAndPush
-  displayName: 'Build and Push Images'
+  displayName: Build & Push Images
   jobs:
-  - job: Build
-    displayName: 'Build and Push Service Images'
-    pool:
-      vmImage: $(vmImageName)
+  # Use a matrix strategy to build/push services concurrently
+  - job: BuildPushMatrix
+    displayName: Build and Push Services
+    strategy:
+      matrix:
+        AuthApi:
+          imageName: $(imageAuthApi)
+          buildContext: 'auth-api'
+        UsersApi:
+          imageName: $(imageUsersApi)
+          buildContext: 'users-api'
+        TodosApi:
+          imageName: $(imageTodosApi)
+          buildContext: 'todos-api'
+        LogProcessor:
+          imageName: $(imageLogProcessor)
+          buildContext: 'log-processor'
+        Frontend:
+          imageName: $(imageFrontend)
+          buildContext: 'frontend'
     steps:
-    # Use one task per service image for clarity
-    - task: Docker@2
-      displayName: 'Build and Push Users API'
-      inputs:
-        command: buildAndPush
-        containerRegistry: $(acrServiceConnection)
-        repository: '$(imageRepoPrefix)/users-api'
-        dockerfile: 'UsersAPI/Dockerfile' # Adjust path if needed
-        buildContext: 'UsersAPI'          # Adjust path if needed
-        tags: $(imageTag)
+      - task: Docker@2
+        displayName: 'Build and Push $(imageName)'
+        inputs:
+          containerRegistry: 'Azure-Service-Connection' # Your Service Connection name linked to Azure
+          repository: '$(imageName)' # Use the matrix variable
+          command: 'buildAndPush'
+          Dockerfile: '$(Build.SourcesDirectory)/$(buildContext)/Dockerfile' # Use the matrix variable
+          buildContext: '$(Build.SourcesDirectory)/$(buildContext)' # Set build context to service directory
+          tags: '$(Build.BuildId)' # Tag image with the pipeline build ID
+          addPipelineData: false # Avoid adding extra labels unless desired
 
-    - task: Docker@2
-      displayName: 'Build and Push Auth API'
-      inputs:
-        command: buildAndPush
-        containerRegistry: $(acrServiceConnection)
-        repository: '$(imageRepoPrefix)/auth-api'
-        dockerfile: 'AuthAPI/Dockerfile'   # Adjust path if needed
-        buildContext: 'AuthAPI'            # Adjust path if needed
-        tags: $(imageTag)
-
-    - task: Docker@2
-      displayName: 'Build and Push TODOs API'
-      inputs:
-        command: buildAndPush
-        containerRegistry: $(acrServiceConnection)
-        repository: '$(imageRepoPrefix)/todos-api'
-        dockerfile: 'TodosAPI/Dockerfile' # Adjust path if needed
-        buildContext: 'TodosAPI'          # Adjust path if needed
-        tags: $(imageTag)
-
-    - task: Docker@2
-      displayName: 'Build and Push Log Processor'
-      inputs:
-        command: buildAndPush
-        containerRegistry: $(acrServiceConnection)
-        repository: '$(imageRepoPrefix)/log-processor'
-        dockerfile: 'LogProcessor/Dockerfile' # Adjust path if needed
-        buildContext: 'LogProcessor'          # Adjust path if needed
-        tags: $(imageTag)
-
-    - task: Docker@2
-      displayName: 'Build and Push Frontend'
-      inputs:
-        command: buildAndPush
-        containerRegistry: $(acrServiceConnection)
-        repository: '$(imageRepoPrefix)/frontend'
-        dockerfile: 'Frontend/Dockerfile' # Adjust path if needed
-        buildContext: 'Frontend'          # Adjust path if needed
-        tags: $(imageTag)
-
-    # Publish the Kubernetes manifests folder as an artifact
-    # This makes it available to the deployment stage without needing checkout again
-    - task: PublishPipelineArtifact@1
-      inputs:
-        targetPath: '$(kubernetesManifestPath)'
-        artifact: 'kubernetes-manifests'
-        publishLocation: 'pipeline'
-
-    # Also publish the ACI deployment file
-    - task: PublishPipelineArtifact@1
-      inputs:
-        targetPath: '$(aciDeploymentFile)'
-        artifact: 'aci-manifest'
-        publishLocation: 'pipeline'
-
-
-- stage: DeployACI
-  displayName: 'Deploy to ACI'
+# =========================================================================
+# Stage 2: Deploy to AKS
+# =========================================================================
+- stage: DeployToAKS
+  displayName: Deploy Applications to AKS
   dependsOn: BuildAndPush
-  condition: succeeded() # Only run if BuildAndPush succeeded
+  condition: and(succeeded('BuildAndPush'), or(eq(variables['Build.SourceBranchName'], 'master'), eq(variables['Build.SourceBranchName'], 'dev')))
   jobs:
-  - deployment: DeployACIJob # Use a deployment job for environment tracking
-    displayName: 'Deploy Services to ACI'
-    environment: 'ACI-Learning-Env' # Define an environment in Azure DevOps Pipelines
-    pool:
-      vmImage: $(vmImageName)
+  - deployment: DeployApps
+    displayName: Deploy to AKS ($(environment))
+    environment: 'aks-$(environment)' # Define an ADO Environment for approvals/history
     strategy:
       runOnce:
         deploy:
           steps:
-          # Download the ACI manifest artifact
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              buildType: 'current'
-              artifactName: 'aci-manifest'
-              targetPath: '$(Pipeline.Workspace)/aci'
+            # Replace Tokens in Manifests - REQUIRED for #{...} placeholders
+            # Ensure the 'Replace Tokens' task from the marketplace is installed
+            - task: replacetokens@5 # Use version 5 or latest
+              displayName: 'Replace Tokens in K8s Manifests'
+              inputs:
+                rootDirectory: '$(Build.SourcesDirectory)/$(k8sManifestPath)'
+                targetFiles: '**/*.yaml'
+                encoding: 'auto'
+                writeBOM: false # Typically false for YAML
+                actionOnMissing: 'warn'
+                keepToken: false
+                tokenPrefix: '#{'
+                tokenSuffix: '}#'
+                useLegacyPattern: false
+                # Define variables to be replaced in the manifests
+                # These values come from pipeline variables and the linked variable group
+                variables: |
+                  k8sNamespace = $(k8sNamespace)
+                  acrName = $(acrName)
+                  imageAuthApi = $(imageAuthApi)
+                  imageUsersApi = $(imageUsersApi)
+                  imageTodosApi = $(imageTodosApi)
+                  imageLogProcessor = $(imageLogProcessor)
+                  imageFrontend = $(imageFrontend)
+                  Build.BuildId = $(Build.BuildId)
+                  k8sImagePullSecretName = $(k8sImagePullSecretName)
 
-          # Replace tokens in the ACI YAML file
-          # NOTE: You might need to install this extension: https://marketplace.visualstudio.com/items?itemName=qetza.replacetokens
-          - task: replacetokens@5
-            displayName: 'Replace Tokens in ACI YAML'
-            inputs:
-              targetFiles: '$(Pipeline.Workspace)/aci/$(aciDeploymentFile)'
-              encoding: 'auto'
-              tokenPattern: 'containerregistrycreds'
-              writeBOM: true
-              actionOnMissing: 'warn'
-              keepToken: false
-              tokenPrefix: '#{'
-              tokenSuffix: '}#'
-              useLegacyPattern: false
-              enableTransforms: false
-              enableRecursion: false
-              useLegacyEmptyFeature: true
-              emptyValue: ''
-              # Define variables to be replaced. Use secret variables for credentials.
-              # ACR credentials can often be derived from the service connection if the task supports it,
-              # but AzureCLI task might need them explicitly. Let's try passing them.
-              # Get ACR credentials from the Service Connection
-              # Note: Ensure your ACR service connection user has AcrPull role on the ACR
-              variables: |
-                ACR_LOGIN_SERVER: $(acrLoginServer)
-                ACR_USERNAME: $(acrServiceConnection.username) # Access service connection username
-                ACR_PASSWORD: $(acrServiceConnection.password) # Access service connection password (SECRET)
-                JWT_SECRET: $(JWT_SECRET)                       # Pipeline Secret Variable
-                ACI_DNS_NAME_LABEL: $(aciDnsNameLabel)
-                Build.BuildId: $(Build.BuildId)
-                AzureLocation: $(azureLocation)
+            # NOTE: The following tasks now operate on the files with tokens replaced.
 
-          # Deploy using Azure CLI
-          - task: AzureCLI@2
-            displayName: 'Deploy to Azure Container Instances'
-            inputs:
-              azureSubscription: $(azureSubscriptionConnection)
-              scriptType: 'bash'
-              scriptLocation: 'inlineScript'
-              inlineScript: |
-                echo "Deploying ACI Container Group..."
-                az container create \
-                  --resource-group $(resourceGroup) \
-                  --file $(Pipeline.Workspace)/aci/$(aciDeploymentFile)
-                echo "ACI Deployment Initiated."
+            - task: KubernetesManifest@0
+              displayName: Create Namespace $(k8sNamespace)
+              inputs:
+                action: 'createSecret' # Using apply with raw manifest for namespace
+                kubernetesServiceConnection: 'Azure-Service-Connection'
+                namespace: 'default' # Action runs in default, but creates the target namespace
+                manifests: |
+                  apiVersion: v1
+                  kind: Namespace
+                  metadata:
+                    # Ensure the namespace is NOT parameterized here if using replacetokens task
+                    # as it will be handled by the task's namespace input below.
+                    # OR ensure replacetokens runs BEFORE this step. (Current order is correct)
+                    name: $(k8sNamespace) # Use pipeline variable directly
+                # Use force=true if namespace might exist but needs reconciliation (use cautiously)
+                # force: true
 
+            - task: KubernetesManifest@0
+              displayName: Create/Update Image Pull Secret ($(k8sImagePullSecretName))
+              inputs:
+                action: 'createSecret'
+                kubernetesServiceConnection: 'Azure-Service-Connection'
+                namespace: $(k8sNamespace) # Target the correct namespace
+                secretType: 'dockerRegistry'
+                secretName: $(k8sImagePullSecretName) # Defined in variables
+                dockerRegistryEndpoint: 'Azure-Service-Connection' # Service Connection linked to your ACR
+                force: true # Allow updates
 
-- stage: DeployAKS
-  displayName: 'Deploy to AKS'
-  dependsOn: BuildAndPush
-  condition: succeeded()
-  jobs:
-  - deployment: DeployAKSJob
-    displayName: 'Deploy Services to AKS'
-    environment: 'AKS-Learning-Env' # Define an environment in Azure DevOps Pipelines
-    pool:
-      vmImage: $(vmImageName)
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-          # Download the Kubernetes manifests artifact
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              buildType: 'current'
-              artifactName: 'kubernetes-manifests'
-              targetPath: '$(Pipeline.Workspace)/k8s'
+            - task: KubernetesManifest@0
+              displayName: Create/Update Redis Secret ($(k8sRedisSecretName))
+              inputs:
+                action: 'createSecret'
+                kubernetesServiceConnection: 'Azure-Service-Connection'
+                namespace: $(k8sNamespace) # Target the correct namespace
+                secretType: 'generic'
+                secretName: $(k8sRedisSecretName) # Defined in variables
+                # Ensure redisPrimaryKey is marked as secret in the variable group
+                secretArguments: '--from-literal=redisHost=$(redisHostName) --from-literal=redisKey=$(redisPrimaryKey)'
+                force: true # Allow updates
 
-          # Replace tokens in Kubernetes Manifests
-          - task: replacetokens@5
-            displayName: 'Replace Tokens in K8s Manifests'
-            inputs:
-              rootDirectory: '$(Pipeline.Workspace)/k8s'
-              targetFiles: '**/*.yml' # Process all yaml files in the folder
-              encoding: 'auto'
-              tokenPattern: 'default'
-              writeBOM: true
-              actionOnMissing: 'warn'
-              keepToken: false
-              tokenPrefix: '#{'
-              tokenSuffix: '}#'
-              useLegacyPattern: false
-              enableTransforms: false
-              enableRecursion: false
-              useLegacyEmptyFeature: true
-              emptyValue: ''
-              variables: |
-                ACR_LOGIN_SERVER: $(acrLoginServer)
-                Build.BuildId: $(imageTag)
-                JWT_SECRET: $(JWT_SECRET) # Inject secret if needed in K8s manifests
+            - task: KubernetesManifest@0
+              displayName: Create/Update App Secrets (JWT) ($(k8sAppSecretName))
+              inputs:
+                action: 'createSecret'
+                kubernetesServiceConnection: 'Azure-Service-Connection'
+                namespace: $(k8sNamespace) # Target the correct namespace
+                secretType: 'generic'
+                secretName: $(k8sAppSecretName) # Defined in variables
+                # Ensure jwtSecretValue is defined in the variable group and marked as secret
+                secretArguments: '--from-literal=jwtSecret=$(jwtSecretValue)'
+                force: true # Allow updates
 
-          # Deploy to Kubernetes
-          - task: KubernetesManifest@0
-            displayName: 'Deploy to Kubernetes Cluster'
-            inputs:
-              action: 'deploy'
-              kubernetesServiceConnection: $(kubernetesServiceConnection)
-              namespace: $(kubernetesNamespace)
-              manifests: |
-                $(Pipeline.Workspace)/k8s/01-redis-deployment.yml
-                $(Pipeline.Workspace)/k8s/02-redis-service.yml
-                $(Pipeline.Workspace)/k8s/03-users-api-deployment.yml
-                $(Pipeline.Workspace)/k8s/04-users-api-service.yml
-                $(Pipeline.Workspace)/k8s/05-auth-api-deployment.yml
-                $(Pipeline.Workspace)/k8s/06-auth-api-service.yml
-                $(Pipeline.Workspace)/k8s/07-todos-api-deployment.yml
-                $(Pipeline.Workspace)/k8s/08-todos-api-service.yml
-                $(Pipeline.Workspace)/k8s/09-log-processor-deployment.yml
-                # Log processor doesn't usually need a service unless something calls it
-                $(Pipeline.Workspace)/k8s/10-frontend-deployment.yml
-                $(Pipeline.Workspace)/k8s/11-frontend-service.yml
-              # Image tags are now directly in the manifests due to token replacement
-              # containers: | # Not needed if tags are replaced in manifests directly
-              #   $(acrLoginServer)/$(imageRepoPrefix)/users-api:$(imageTag)
-              #   $(acrLoginServer)/$(imageRepoPrefix)/auth-api:$(imageTag)
-              #   $(acrLoginServer)/$(imageRepoPrefix)/todos-api:$(imageTag)
-              #   $(acrLoginServer)/$(imageRepoPrefix)/log-processor:$(imageTag)
-              #   $(acrLoginServer)/$(imageRepoPrefix)/frontend:$(imageTag)
+            - task: KubernetesManifest@0
+              displayName: Apply App ConfigMap
+              inputs:
+                action: 'apply' # Use apply for ConfigMaps
+                kubernetesServiceConnection: 'Azure-Service-Connection'
+                namespace: $(k8sNamespace) # Target the correct namespace
+                # Apply the configmap file AFTER token replacement
+                manifests: '$(Build.SourcesDirectory)/$(k8sManifestPath)/app-configmap.yaml'
+                # force: true # Use if updates often needed
+
+            - task: KubernetesManifest@0
+              displayName: Deploy Application Manifests
+              inputs:
+                action: 'deploy' # Creates or updates resources based on manifests
+                kubernetesServiceConnection: 'Azure-Service-Connection'
+                namespace: $(k8sNamespace) # Deploy into the correct namespace
+                # Apply Deployments and Services (token replaced files)
+                manifests: |
+                  $(Build.SourcesDirectory)/$(k8sManifestPath)/auth-api-deployment.yaml
+                  $(Build.SourcesDirectory)/$(k8sManifestPath)/auth-api-service.yaml
+                  $(Build.SourcesDirectory)/$(k8sManifestPath)/users-api-deployment.yaml
+                  $(Build.SourcesDirectory)/$(k8sManifestPath)/users-api-service.yaml
+                  $(Build.SourcesDirectory)/$(k8sManifestPath)/todos-api-deployment.yaml
+                  $(Build.SourcesDirectory)/$(k8sManifestPath)/todos-api-service.yaml
+                  $(Build.SourcesDirectory)/$(k8sManifestPath)/log-processor-deployment.yaml
+                  # log-processor has no service
+                  $(Build.SourcesDirectory)/$(k8sManifestPath)/frontend-deployment.yaml
+                  $(Build.SourcesDirectory)/$(k8sManifestPath)/frontend-service.yaml
+                # NOTE: Image substitution is now handled by the replacetokens task.
+                # The 'containers' input is NOT needed here if replacetokens ran successfully.
+                # containers: |
+                #   ... (This section can be removed if replacetokens works) ...
+                # imagePullSecrets is still needed if specified in deployment YAMLs, but replacetokens should have inserted the correct name already.
+                # imagePullSecrets: '$(k8sImagePullSecretName)'
+
+            - task: Bash@3
+              displayName: Verify Deployments (Wait & Check)
+              inputs:
+                targetType: 'inline'
+                script: |
+                  echo "Waiting for deployments in namespace $(k8sNamespace) to stabilize..."
+                  # Assume kubectl is available on the agent, configure context if needed
+                  # If context isn't automatically set by Service Connection:
+                  echo "Attempting to set kubectl context..."
+                  az login --service-principal -u $(servicePrincipalId) -p $(servicePrincipalKey) --tenant $(tenantId) --output none
+                  az account set --subscription $(subscriptionId)
+                  az aks get-credentials --resource-group $(aksResourceGroup) --name $(aksClusterName) --overwrite-existing
+                  if [ $? -ne 0 ]; then echo "Failed to get AKS credentials."; exit 1; fi
+                  echo "kubectl context set."
+
+                  # Wait for deployments to become available
+                  kubectl wait --namespace $(k8sNamespace) \
+                    --for=condition=available deployment \
+                    --all \
+                    --timeout=5m
+
+                  if [ $? -ne 0 ]; then echo "Deployments did not become available in time."; exit 1; fi
+
+                  echo "All deployments in $(k8sNamespace) are available."
+                  echo "--- Pods ---"
+                  kubectl get pods -n $(k8sNamespace)
+                  echo "--- Services ---"
+                  kubectl get svc -n $(k8sNamespace)
+                  # Potentially check for LoadBalancer IP
+                  echo "Checking Frontend LoadBalancer IP..."
+                  FRONTEND_IP=$(kubectl get svc frontend-service -n $(k8sNamespace) -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+                  if [ -z "$FRONTEND_IP" ]; then
+                    echo "Frontend LoadBalancer IP not assigned yet. Waiting a bit longer..."
+                    sleep 60 # Wait for Azure LB provisioning
+                    FRONTEND_IP=$(kubectl get svc frontend-service -n $(k8sNamespace) -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+                  fi
+                  if [ -n "$FRONTEND_IP" ]; then
+                    echo "Frontend accessible at: http://$FRONTEND_IP"
+                  else
+                    echo "WARNING: Frontend LoadBalancer IP could not be retrieved."
+                  fi

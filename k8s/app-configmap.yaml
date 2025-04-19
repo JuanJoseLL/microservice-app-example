@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: #{k8sNamespace}# # Placeholder replaced by pipeline
+data:
+  # Redis Config (use standard SSL port for Azure Cache)
+  REDIS_PORT: "6380"
+  REDIS_CHANNEL: "log_channel"
+
+  # JWT Secret Key Name (reference to the key within the secret)
+  JWT_SECRET_KEY_NAME: "jwtSecret" # The key name inside 'app-secrets'
+
+  # Redis Host/Key Names (references to keys within the secret)
+  REDIS_HOST_KEY_NAME: "redisHost" # The key name inside 'redis-secret'
+  REDIS_KEY_KEY_NAME: "redisKey"   # The key name inside 'redis-secret'
+
+  # Internal Service Addresses (using K8s Service names and their exposed ports)
+  AUTH_API_ADDRESS: "http://auth-api-service:80"   # Service name: auth-api-service, Service port: 80
+  USERS_API_ADDRESS: "http://users-api-service:80"  # Service name: users-api-service, Service port: 80
+  TODOS_API_ADDRESS: "http://todos-api-service:80"  # Service name: todos-api-service, Service port: 80
+
+  # Standard Ports for Services (internal container ports)
+  AUTH_API_PORT: "8000"
+  USERS_API_PORT: "8083"
+  TODOS_API_PORT: "8082"
+  FRONTEND_PORT: "8080"
+  # Log processor doesn't expose a port

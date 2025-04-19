@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: users-api-deployment
+  namespace: #{k8sNamespace}#
+  labels:
+    app: users-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: users-api
+  template:
+    metadata:
+      labels:
+        app: users-api
+    spec:
+      containers:
+      - name: users-api
+        image: #{acrName}#.azurecr.io/#{imageUsersApi}#:#{Build.BuildId}#
+        ports:
+        - containerPort: 8083 # Must match SERVER_PORT
+        env:
+        - name: SERVER_PORT # Port the Spring Boot app listens on
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: USERS_API_PORT
+        - name: JWT_SECRET # Read from the 'app-secrets' secret
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: jwtSecret
+      imagePullSecrets:
+      - name: #{k8sImagePullSecretName}#

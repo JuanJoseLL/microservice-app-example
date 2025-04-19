@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: todos-api-deployment
+  namespace: #{k8sNamespace}#
+  labels:
+    app: todos-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: todos-api
+  template:
+    metadata:
+      labels:
+        app: todos-api
+    spec:
+      containers:
+      - name: todos-api
+        image: #{acrName}#.azurecr.io/#{imageTodosApi}#:#{Build.BuildId}#
+        ports:
+        - containerPort: 8082 # Must match TODO_API_PORT
+        env:
+        - name: TODO_API_PORT # Port the Node app listens on
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: TODOS_API_PORT
+        - name: JWT_SECRET # Read from the 'app-secrets' secret
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: jwtSecret
+        - name: REDIS_HOST # Read from the 'redis-secret' secret
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret # Secret created by pipeline
+              key: redisHost     # Key from Terraform output redisHostName
+        - name: REDIS_PORT # Read from the ConfigMap
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: REDIS_PORT
+        - name: REDIS_CHANNEL # Read from the ConfigMap
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: REDIS_CHANNEL
+        # Note: The app might need the Redis Key too. If so, add:
+        # - name: REDIS_KEY # Or whatever the app expects
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: redis-secret
+        #       key: redisKey # Key from Terraform output redisPrimaryKey
+      imagePullSecrets:
+      - name: #{k8sImagePullSecretName}#

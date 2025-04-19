@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-api-deployment
+  namespace: #{k8sNamespace}#
+  labels:
+    app: auth-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-api
+  template:
+    metadata:
+      labels:
+        app: auth-api
+    spec:
+      containers:
+      - name: auth-api
+        image: #{acrName}#.azurecr.io/#{imageAuthApi}#:#{Build.BuildId}# # Placeholder replaced by pipeline
+        ports:
+        - containerPort: 8000 # Must match AUTH_API_PORT if set via env
+        env:
+        - name: AUTH_API_PORT # Port the Go app listens on
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: AUTH_API_PORT
+        - name: USERS_API_ADDRESS # Address of the K8s Service for Users API
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: USERS_API_ADDRESS
+        - name: JWT_SECRET # Read from the 'app-secrets' secret
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets # Secret created by pipeline
+              key: jwtSecret    # Key within the secret
+      imagePullSecrets:
+      - name: #{k8sImagePullSecretName}# # Placeholder replaced by pipeline
