@@ -106,6 +106,21 @@ stages:
       runOnce:
         deploy:
           steps:
+            - task: Bash@3
+              displayName: 'Debug: List Source Directory Contents'
+              inputs:
+                targetType: 'inline'
+                script: |
+                  echo "Listing contents of $(Build.SourcesDirectory):"
+                  ls -la $(Build.SourcesDirectory)
+                  echo "Checking for $(Build.SourcesDirectory)/$(k8sManifestPath):"
+                  if [ -d "$(Build.SourcesDirectory)/$(k8sManifestPath)" ]; then
+                    echo "Directory $(Build.SourcesDirectory)/$(k8sManifestPath) found. Contents:"
+                    ls -la "$(Build.SourcesDirectory)/$(k8sManifestPath)"
+                  else
+                    echo "ERROR: Directory $(Build.SourcesDirectory)/$(k8sManifestPath) NOT FOUND."
+                  fi
+
             # Replace Tokens in Manifests - REQUIRED for #{...} placeholders
             # Ensure the 'Replace Tokens' task from the marketplace is installed
             - task: replacetokens@5 # Use version 5 or latest
