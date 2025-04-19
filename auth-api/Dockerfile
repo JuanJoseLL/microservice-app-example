@@ -1,5 +1,5 @@
 # ---- Builder Stage ----
-    FROM golang:1.21-alpine AS builder
+    FROM golang:1.22-alpine AS builder
     # Or use the specific Go version from your README if needed, e.g., golang:1.18-alpine, but 1.21+ is recommended
     
     WORKDIR /app
