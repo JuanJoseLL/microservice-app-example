@@ -4,9 +4,7 @@
     
     WORKDIR /app
     
-    # Install Python and build tools needed by node-gyp (for node-sass)
-    RUN apk add --no-cache python3 py3-pip make g++
-    
+    # Install Python and build tools needed by node-gyp (for node-sass)    
     COPY package*.json ./
     RUN npm install  # This should now find python3
     COPY . .

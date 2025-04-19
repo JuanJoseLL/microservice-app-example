@@ -28,12 +28,11 @@ Following users are hardcoded for you:
 | janed     | ddd       |
 
 ## Building
-
-```
-- export GO111MODULE=on
-- go mod init github.com/bortizf/microservice-app-example/tree/master/auth-api
-- go mod tidy
-- go build
+```bash
+# Ensure Go Modules are enabled (Go 1.18+)
+go mod tidy
+# Build the binary
+go build -o auth-api
 ```
 
 ## Running
