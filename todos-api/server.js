@@ -12,9 +12,15 @@ const {HttpLogger} = require('zipkin-transport-http');
 const zipkinMiddleware = require('zipkin-instrumentation-express').expressMiddleware;
 
 const logChannel = process.env.REDIS_CHANNEL || 'log_channel';
+const redisHost = process.env.REDIS_HOST || 'localhost';
+const redisPort = process.env.REDIS_PORT || 6379;
+const redisURL = `rediss://${redisHost}:${redisPort}`;
 const redisClient = require("redis").createClient({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: process.env.REDIS_PORT || 6379,
+  url: redisURL,
+  socket: {
+    tls: true,
+    rejectUnauthorized: false
+  },
   retry_strategy: function (options) {
       if (options.error && options.error.code === 'ECONNREFUSED') {
           return new Error('The server refused the connection');
