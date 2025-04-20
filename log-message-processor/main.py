@@ -144,6 +144,7 @@ if __name__ == '__main__':
             time.sleep(retry_delay)
             # Exponential backoff for retry delay
             retry_delay = min(retry_delay * 2, 60)  # Max 60 seconds
+            logger.info(f"Retry delay increased to {retry_delay} seconds")
         else:
             logger.error(f"Max retries ({max_retries}) reached. Giving up.")
             break

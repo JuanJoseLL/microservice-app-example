@@ -15,6 +15,6 @@ let syncedData = {
 if (localStorage.getItem(STORAGE_KEY)) {
   syncedData = JSON.parse(localStorage.getItem(STORAGE_KEY))
 }
-
+console.log('syncedData', syncedData)
 // Merge data and export it.
 export const state = Object.assign(syncedData)
