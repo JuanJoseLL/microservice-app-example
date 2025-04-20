@@ -53,7 +53,7 @@ if __name__ == '__main__':
     redis_host = os.environ['REDIS_HOST']
     redis_port = int(os.environ['REDIS_PORT'])
     redis_channel = os.environ['REDIS_CHANNEL']
-    redis_password = os.environ.get['REDIS_PASSWORD']
+    redis_password = os.environ['REDIS_PASSWORD']
     zipkin_url = os.environ['ZIPKIN_URL'] if 'ZIPKIN_URL' in os.environ else ''
     
     # Used by Zipkin for sending spans
