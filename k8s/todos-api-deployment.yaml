@@ -54,5 +54,4 @@ spec:
         #     secretKeyRef:
         #       name: redis-secret
         #       key: redisKey # Key from Terraform output redisPrimaryKey
-      imagePullSecrets:
-      - name: #{k8sImagePullSecretName}#
+      

@@ -38,5 +38,4 @@ spec:
             configMapKeyRef:
               name: app-config
               key: TODOS_API_ADDRESS
-      imagePullSecrets:
-      - name: #{k8sImagePullSecretName}#
+      

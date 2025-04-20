@@ -33,5 +33,4 @@ spec:
             secretKeyRef:
               name: app-secrets
               key: jwtSecret
-      imagePullSecrets:
-      - name: #{k8sImagePullSecretName}#
+      

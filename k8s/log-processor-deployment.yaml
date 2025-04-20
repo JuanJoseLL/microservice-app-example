@@ -42,5 +42,4 @@ spec:
         #     secretKeyRef:
         #       name: redis-secret
         #       key: redisKey
-      imagePullSecrets:
-      - name: #{k8sImagePullSecretName}#
+      

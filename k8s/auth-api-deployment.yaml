@@ -38,5 +38,4 @@ spec:
             secretKeyRef:
               name: app-secrets # Secret created by pipeline
               key: jwtSecret    # Key within the secret
-      imagePullSecrets:
-      - name: #{k8sImagePullSecretName}# # Placeholder replaced by pipeline
+      
