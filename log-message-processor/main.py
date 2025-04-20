@@ -147,4 +147,5 @@ if __name__ == '__main__':
             logger.info(f"Retry delay increased to {retry_delay} seconds")
         else:
             logger.error(f"Max retries ({max_retries}) reached. Giving up.")
-            break
+            break # exit the loop
+    logger.info("Exiting log-message-processor")

@@ -9,5 +9,5 @@ spec:
   ports:
     - protocol: TCP
       port: 80
-      targetPort: 8083 # Port the container listens on (SERVER_PORT)
+      targetPort: 8083 # Port the container listens on (SERVER_PORT)sxa
   type: ClusterIP

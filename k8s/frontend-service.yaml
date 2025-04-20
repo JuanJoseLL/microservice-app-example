@@ -8,6 +8,6 @@ spec:
     app: frontend
   ports:
     - protocol: TCP
-      port: 80 # Exposed port on the Load Balancer
+      port: 80 # Exposed port on the Load Balancerasxxx
       targetPort: 8080 # Port the container listens on (PORT)
   type: LoadBalancer # Creates an Azure Load Balancer for external access

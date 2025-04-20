@@ -18,11 +18,11 @@ spec:
       
       containers:
       - name: users-api
-        image: #{acrName}#.azurecr.io/#{imageUsersApi}#:#{Build.BuildId}#
+        image: #{acrName}#.azurecr.io/#{imageAuthApi}#:#{commitSHA}#
         ports:
         - containerPort: 8083 # Must match SERVER_PORT
         env:
-        - name: SERVER_PORT # Port the Spring Boot app listens on
+        - name: SERVER_PORT # Port the Spring Boot app listens onsax
           valueFrom:
             configMapKeyRef:
               name: app-config

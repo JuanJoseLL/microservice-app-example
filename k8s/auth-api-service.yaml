@@ -8,6 +8,6 @@ spec:
     app: auth-api # Selects pods with label 'app: auth-api'
   ports:
     - protocol: TCP
-      port: 80 # Port the service is available on within the cluster
+      port: 80 # Port the service is available on within the clusterxas
       targetPort: 8000 # Port the container listens on (AUTH_API_PORT)
   type: ClusterIP # Only reachable within the cluster

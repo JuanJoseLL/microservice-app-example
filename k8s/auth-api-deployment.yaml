@@ -18,7 +18,7 @@ spec:
       
       containers:
       - name: auth-api
-        image: #{acrName}#.azurecr.io/#{imageAuthApi}#:#{Build.BuildId}# # Placeholder replaced by pipeline
+        image: #{acrName}#.azurecr.io/#{imageAuthApi}#:#{commitSHA}#
         ports:
         - containerPort: 8000 # Must match AUTH_API_PORT if set via env
         env:
@@ -27,7 +27,7 @@ spec:
             configMapKeyRef:
               name: app-config
               key: AUTH_API_PORT
-        - name: USERS_API_ADDRESS # Address of the K8s Service for Users API
+        - name: USERS_API_ADDRESS # Address of the K8s Service for Users APIxasxa
           valueFrom:
             configMapKeyRef:
               name: app-config

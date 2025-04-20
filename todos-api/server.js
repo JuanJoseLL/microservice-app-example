@@ -54,7 +54,7 @@ if (redisHost.endsWith('.redis.cache.windows.net')) {
   };
 } else {
     console.log("Not configuring Redis client for TLS (host does not match Azure pattern)");
-}
+}//you can remove this if you are not using Azure Redis Cache
 
 console.log(`Redis options: ${JSON.stringify(redisOptions)}`);
 console.log(`Attempting to connect to Redis (v2.8) at ${redisHost}:${redisPort}`);

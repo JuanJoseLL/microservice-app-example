@@ -6,7 +6,7 @@ metadata:
   labels:
     app: frontend
 spec:
-  replicas: 2 # Frontend can often be scaled easily
+  replicas: 2 # Frontend can often be scaled easilyxsa
   selector:
     matchLabels:
       app: frontend
@@ -18,7 +18,7 @@ spec:
       
       containers:
       - name: frontend
-        image: #{acrName}#.azurecr.io/#{imageFrontend}#:#{Build.BuildId}#
+        image: #{acrName}#.azurecr.io/#{imageAuthApi}#:#{commitSHA}#
         ports:
         - containerPort: 8080 # Must match PORT
         env:

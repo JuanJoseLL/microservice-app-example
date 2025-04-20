@@ -18,9 +18,9 @@ spec:
       
       containers:
       - name: log-processor
-        image: #{acrName}#.azurecr.io/#{imageLogProcessor}#:#{Build.BuildId}#
+        image: #{acrName}#.azurecr.io/#{imageAuthApi}#:#{commitSHA}#
         env:
-        - name: REDIS_HOST # Read from the 'redis-secret' secret
+        - name: REDIS_HOST # Read from the 'redis-secret' secretsaxsax
           valueFrom:
             secretKeyRef:
               name: redis-secret
