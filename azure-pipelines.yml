@@ -181,7 +181,7 @@ stages:
             - task: KubernetesManifest@0
               displayName: Ensure Namespace $(k8sNamespace) exists
               inputs:
-                action: 'apply' # Apply is idempotent
+                action: 'deploy' 
                 kubernetesServiceConnection: '$(aksServiceConnection)' # Use variable for connection name
                 # namespace: 'default' # Apply runs in default, but creates the target namespace if defined in manifest
                 manifests: |
