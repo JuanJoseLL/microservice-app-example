@@ -202,17 +202,17 @@ stages:
                     kubernetesServiceConnection: '$(aksServiceConnection)'
                     manifests: '$(Build.SourcesDirectory)/$(k8sManifestPath)/namespace.yaml'
 
-                # STEP 4: Create/Update Image Pull Secret (Consider removing if AKS-ACR integration is reliable)
-                - task: KubernetesManifest@0
-                  displayName: Create/Update Image Pull Secret ($(k8sImagePullSecretName))
-                  inputs:
-                    action: 'createSecret'
-                    kubernetesServiceConnection: '$(aksServiceConnection)'
-                    namespace: $(k8sNamespace)
-                    secretType: 'dockerRegistry'
-                    secretName: $(k8sImagePullSecretName)
-                    dockerRegistryEndpoint: '$(acrServiceConnection)'
-                    force: true
+                # # STEP 4: Create/Update Image Pull Secret (Consider removing if AKS-ACR integration is reliable)
+                # - task: KubernetesManifest@0
+                #   displayName: Create/Update Image Pull Secret ($(k8sImagePullSecretName))
+                #   inputs:
+                #     action: 'createSecret'
+                #     kubernetesServiceConnection: '$(aksServiceConnection)'
+                #     namespace: $(k8sNamespace)
+                #     secretType: 'dockerRegistry'
+                #     secretName: $(k8sImagePullSecretName)
+                #     dockerRegistryEndpoint: '$(acrServiceConnection)'
+                #     force: true
 
                 # STEP 5: Create/Update Redis Secret
                 - task: KubernetesManifest@0

@@ -15,8 +15,7 @@ spec:
       labels:
         app: users-api
     spec:
-      imagePullSecrets:
-      - name: #{k8sImagePullSecretName}#
+      
       containers:
       - name: users-api
         image: #{acrName}#.azurecr.io/#{imageUsersApi}#:#{Build.BuildId}#

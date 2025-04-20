@@ -15,8 +15,7 @@ spec:
       labels:
         app: auth-api
     spec:
-      imagePullSecrets:
-      - name: #{k8sImagePullSecretName}#
+      
       containers:
       - name: auth-api
         image: #{acrName}#.azurecr.io/#{imageAuthApi}#:#{Build.BuildId}# # Placeholder replaced by pipeline

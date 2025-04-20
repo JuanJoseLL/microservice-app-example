@@ -16,16 +16,17 @@ def log_message(message):
     time.sleep(time_delay / 1000)
     print('message received after waiting for {}ms: {}'.format(time_delay, message))
 
-def create_redis_connection(redis_host, redis_port, redis_channel):
+def create_redis_connection(redis_host, redis_port, redis_channel, redis_password):
     """Create Redis connection with proper error handling and SSL configuration"""
     try:
         # Check if we're using the Azure Redis format (SSL)
         use_ssl = redis_host.endswith('.redis.cache.windows.net')
-        
+        logger.info(f"Attempting Redis connection to {redis_host}:{redis_port} with SSL={use_ssl}")
         redis_client = redis.Redis(
             host=redis_host,
             port=redis_port,
             db=0,
+            password=redis_password,
             ssl=use_ssl,
             socket_timeout=10,
             socket_connect_timeout=10,
@@ -52,6 +53,7 @@ if __name__ == '__main__':
     redis_host = os.environ['REDIS_HOST']
     redis_port = int(os.environ['REDIS_PORT'])
     redis_channel = os.environ['REDIS_CHANNEL']
+    redis_password = os.environ.get['REDIS_PASSWORD']
     zipkin_url = os.environ['ZIPKIN_URL'] if 'ZIPKIN_URL' in os.environ else ''
     
     # Used by Zipkin for sending spans
@@ -69,11 +71,15 @@ if __name__ == '__main__':
     max_retries = 5
     retry_delay = 5  # seconds
     retry_count = 0
+
+    if redis_host.endswith('.redis.cache.windows.net') and not redis_password:
+         logger.error("REDIS_PASSWORD environment variable is required for Azure Cache for Redis.")
+         exit(1) 
     
     while retry_count < max_retries:
         try:
             logger.info(f"Connecting to Redis (attempt {retry_count+1}/{max_retries})...")
-            pubsub = create_redis_connection(redis_host, redis_port, redis_channel)
+            pubsub = create_redis_connection(redis_host, redis_port, redis_channel, redis_password)
             
             logger.info("Starting message processing loop")
             for item in pubsub.listen():

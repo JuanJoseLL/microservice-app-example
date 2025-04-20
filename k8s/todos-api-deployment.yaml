@@ -15,8 +15,7 @@ spec:
       labels:
         app: todos-api
     spec:
-      imagePullSecrets:
-      - name: #{k8sImagePullSecretName}#
+      
       containers:
       - name: todos-api
         image: #{acrName}#.azurecr.io/#{imageTodosApi}#:#{Build.BuildId}#
@@ -49,9 +48,9 @@ spec:
               name: app-config
               key: REDIS_CHANNEL
         # Note: The app might need the Redis Key too. If so, add:
-        # - name: REDIS_KEY # Or whatever the app expects
-        #   valueFrom:
-        #     secretKeyRef:
-        #       name: redis-secret
-        #       key: redisKey # Key from Terraform output redisPrimaryKey
+        - name: REDIS_PASSWORD # Or whatever the app expects
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redisKey # Key from Terraform output redisPrimaryKey
       

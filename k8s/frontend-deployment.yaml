@@ -15,8 +15,7 @@ spec:
       labels:
         app: frontend
     spec:
-      imagePullSecrets:
-      - name: #{k8sImagePullSecretName}#
+      
       containers:
       - name: frontend
         image: #{acrName}#.azurecr.io/#{imageFrontend}#:#{Build.BuildId}#

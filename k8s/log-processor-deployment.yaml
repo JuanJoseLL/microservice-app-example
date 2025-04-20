@@ -15,8 +15,7 @@ spec:
       labels:
         app: log-processor
     spec:
-      imagePullSecrets:
-      - name: #{k8sImagePullSecretName}#
+      
       containers:
       - name: log-processor
         image: #{acrName}#.azurecr.io/#{imageLogProcessor}#:#{Build.BuildId}#
@@ -36,10 +35,10 @@ spec:
             configMapKeyRef:
               name: app-config
               key: REDIS_CHANNEL
-        # Note: The app might need the Redis Key too. If so, add:
-        # - name: REDIS_PASSWORD # Or whatever the app expects
-        #   valueFrom:
-        #     secretKeyRef:
-        #       name: redis-secret
-        #       key: redisKey
+        
+        - name: REDIS_PASSWORD 
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redisKey
       
