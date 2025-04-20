@@ -231,7 +231,7 @@ stages:
               displayName: Apply App ConfigMap
               condition: succeeded() # Only run if previous steps succeeded
               inputs:
-                action: 'apply' # Use apply for ConfigMaps
+                action: 'deploy' # Use apply for ConfigMaps
                 kubernetesServiceConnection: '$(aksServiceConnection)' # Use variable for connection name
                 namespace: $(k8sNamespace) # Target the correct namespace
                 # Apply the configmap file AFTER token replacement
@@ -242,7 +242,7 @@ stages:
             - task: KubernetesManifest@0
               displayName: Apply Application Manifests
               inputs:
-                action: 'apply' # Use 'apply' for better idempotency
+                action: 'deploy' # Use 'apply' for better idempotency
                 kubernetesServiceConnection: '$(aksServiceConnection)' # Use variable for connection name
                 namespace: $(k8sNamespace) # Deploy into the correct namespace
                 # Apply Deployments and Services from the k8s directory (token replaced files)
