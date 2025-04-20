@@ -6,6 +6,7 @@ metadata:
   labels:
     app: frontend
 spec:
+  progressDeadlineSeconds: 300
   replicas: 2 # Frontend can often be scaled easilyxsa
   selector:
     matchLabels:

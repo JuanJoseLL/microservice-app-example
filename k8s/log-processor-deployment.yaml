@@ -6,6 +6,7 @@ metadata:
   labels:
     app: log-processor
 spec:
+  progressDeadlineSeconds: 300
   replicas: 1 # Can scale if processing becomes a bottleneck
   selector:
     matchLabels:

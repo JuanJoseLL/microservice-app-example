@@ -6,6 +6,7 @@ metadata:
   labels:
     app: auth-api
 spec:
+  progressDeadlineSeconds: 300
   replicas: 1
   selector:
     matchLabels:
