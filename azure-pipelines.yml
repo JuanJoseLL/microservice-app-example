@@ -26,13 +26,6 @@ variables:
     ${{ if eq(variables['Build.SourceBranchName'], 'dev') }}:
       value: 'dev'
   # Link to the variable group containing infra outputs and secrets
-  # IMPORTANT: Create Variable Groups named 'app-variables-dev' and 'app-variables-prod' in Azure DevOps Library
-  #            These groups must contain:
-  #            - acrName: Your Azure Container Registry name (e.g., myappacr)
-  #            - redisHostName: The hostname of your Redis instance (e.g., myappredis.redis.cache.windows.net)
-  #            - redisPrimaryKey: The primary access key for Redis (Mark as secret)
-  #            - jwtSecretValue: The secret key for JWT signing (Mark as secret)
-  #            - (Optional, if needed for kubectl context script): servicePrincipalId, servicePrincipalKey, tenantId, subscriptionId, aksResourceGroup, aksClusterName
   - group: app-variables-${{ variables.environment }} # e.g., app-variables-dev or app-variables-prod
 
   # Define image names consistently
@@ -49,31 +42,29 @@ variables:
 
   # Kubernetes details
   - name: k8sNamespace
-    value: 'apps-$(environment)' # Deploy apps into a namespace per environment (e.g., apps-dev, apps-prod)
+    value: 'apps-$(environment)'
   - name: k8sImagePullSecretName
     value: 'acr-secret'
   - name: k8sRedisSecretName
     value: 'redis-secret'
-  - name: k8sAppSecretName # Name for the JWT secret
+  - name: k8sAppSecretName
     value: 'app-secrets'
   - name: k8sManifestPath
-    value: 'k8s' # Path to your kubernetes manifests in the repo
+    value: 'k8s'
 
-  # Service Connection Names (Replace with your actual Service Connection names)
+  # Service Connection Names
   - name: acrServiceConnection
     value: 'ACR-Service-Connection' # Replace with your ACR Service Connection name
-  - name: aksServiceConnection # This needs to match the connection used in KubernetesManifest tasks
-    # Example uses a specific name, parameterize or use a consistent name if needed
+  - name: aksServiceConnection
     value: 'aks-prod-microAppProd-prod-pheasant-aks-apps-prod-1745099156012' # Replace with your AKS Service Connection name
 
 stages:
   # =========================================================================
-  # Stage 1: Build and Push Docker Images
+  # Stage 1: Build and Push ONLY CHANGED Docker Images
   # =========================================================================
   - stage: BuildAndPush
-    displayName: Build & Push Images
+    displayName: Build & Push Changed Images
     jobs:
-      # Use a matrix strategy to build/push services concurrently
       - job: BuildPushMatrix
         displayName: Build and Push Services
         strategy:
@@ -94,16 +85,50 @@ stages:
               imageName: $(imageFrontend)
               buildContext: 'frontend'
         steps:
-          - task: Docker@2
-            displayName: 'Build and Push $(imageName)'
+          # Step 1: Checkout with full history to allow diffing
+          - checkout: self
+            fetchDepth: 0 # Fetch all history for accurate diff
+            displayName: Checkout Full History
+
+          # Step 2: Detect changes within the service directory
+          # NOTE: This simple diff compares HEAD to the previous commit (HEAD~1).
+          # This works well for direct pushes to dev/master.
+          # For more complex scenarios like PR builds merging into dev/master,
+          # a more sophisticated script comparing against the target branch might be needed.
+          - task: Bash@3
+            name: DetectChanges # Give the step a name to reference its variables
+            displayName: 'Detect Changes in $(buildContext)'
             inputs:
-              containerRegistry: '$(acrServiceConnection)' # Use variable for connection name
-              repository: '$(imageName)' # Use the matrix variable
+              targetType: 'inline'
+              script: |
+                set -e # Exit immediately if a command exits with a non-zero status.
+                echo "Checking for changes in $(buildContext)/ between HEAD and HEAD~1"
+                # Initialize ShouldBuild variable for this matrix instance
+                echo "##vso[task.setvariable variable=ShouldBuild]false"
+
+                # Use git diff --quiet. It exits with 1 if there are changes, 0 otherwise.
+                # We check changes only within the specific buildContext directory.
+                if git diff --quiet HEAD HEAD~1 -- "$(Build.SourcesDirectory)/$(buildContext)/"; then
+                  echo "No changes detected in $(buildContext)."
+                else
+                  echo "Changes detected in $(buildContext). Setting ShouldBuild=true."
+                  # Set the variable that the next step will check
+                  echo "##vso[task.setvariable variable=ShouldBuild]true"
+                fi
+
+          # Step 3: Build and Push ONLY if changes were detected
+          - task: Docker@2
+            displayName: 'Build and Push $(imageName) (if changed)'
+            # Condition: Only run if the ShouldBuild variable was set to true in the previous step
+            condition: eq(variables['ShouldBuild'], 'true')
+            inputs:
+              containerRegistry: '$(acrServiceConnection)'
+              repository: '$(imageName)'
               command: 'buildAndPush'
-              Dockerfile: '$(Build.SourcesDirectory)/$(buildContext)/Dockerfile' # Use the matrix variable
-              buildContext: '$(Build.SourcesDirectory)/$(buildContext)' # Set build context to service directory
-              tags: '$(Build.BuildId)' # Tag image with the pipeline build ID
-              addPipelineData: false # Avoid adding extra labels unless desired
+              Dockerfile: '$(Build.SourcesDirectory)/$(buildContext)/Dockerfile'
+              buildContext: '$(Build.SourcesDirectory)/$(buildContext)'
+              tags: '$(Build.BuildId)'
+              addPipelineData: false
 
   # =========================================================================
   # Stage 2: Deploy to AKS
@@ -111,20 +136,22 @@ stages:
   - stage: DeployToAKS
     displayName: Deploy Applications to AKS
     dependsOn: BuildAndPush
-    condition: and(succeeded('BuildAndPush'), or(eq(variables['Build.SourceBranchName'], 'master'), eq(variables['Build.SourceBranchName'], 'dev')))
+    # Condition: Run if Build stage succeeded OR was skipped (because nothing changed)
+    # AND the branch is master or dev.
+    condition: and(in(dependencies.BuildAndPush.result, 'Succeeded', 'SucceededWithIssues', 'Skipped'), or(eq(variables['Build.SourceBranchName'], 'master'), eq(variables['Build.SourceBranchName'], 'dev')))
     jobs:
       - deployment: DeployApps
         displayName: Deploy to AKS ($(environment))
-        environment: 'aks-$(environment)' # Define an ADO Environment for approvals/history (e.g., aks-dev, aks-prod)
+        environment: 'aks-$(environment)'
         strategy:
           runOnce:
             deploy:
               steps:
-                # STEP 0: Checkout the repository code into the agent's workspace
+                # STEP 0: Checkout the repository code
                 - checkout: self
                   displayName: Checkout Repository
 
-                # STEP 1: Debug (Optional but helpful) - Verify k8s directory exists
+                # STEP 1: Debug - Verify k8s directory exists (with FI fix)
                 - task: Bash@3
                   displayName: 'Debug: Check for K8s Manifests Directory'
                   inputs:
@@ -140,110 +167,94 @@ stages:
                         ls -la "$(Build.SourcesDirectory)/$(k8sManifestPath)"
                       else
                         echo "ERROR: Directory $(Build.SourcesDirectory)/$(k8sManifestPath) NOT FOUND. Ensure the path is correct and repo was checked out."
-                        exit 1 # Fail the pipeline if the critical directory is missing
+                        exit 1
+                      fi # <-- Fixed: Added fi
 
                 # STEP 2: Replace Tokens in Manifests
-                # IMPORTANT: Ensure the 'Replace Tokens' task from the Azure DevOps Marketplace is installed in your organization.
-                - task: replacetokens@5 # Use version 5 or latest
+                - task: replacetokens@5
                   displayName: 'Replace Tokens in K8s Manifests'
                   inputs:
-                    rootDirectory: '$(Build.SourcesDirectory)/$(k8sManifestPath)' # Path should be valid now
+                    rootDirectory: '$(Build.SourcesDirectory)/$(k8sManifestPath)'
                     targetFiles: '**/*.yaml'
                     encoding: 'auto'
-                    writeBOM: false # Typically false for YAML
-                    actionOnMissing: 'warn' # Warn if a token is found in files but not in variables
-                    keepToken: false # Replace the token entirely
-                    tokenPrefix: '#{' # Define the prefix for tokens
-                    tokenSuffix: '}#' # Define the suffix for tokens
+                    writeBOM: false
+                    actionOnMissing: 'warn'
+                    keepToken: false
+                    tokenPrefix: '#{'
+                    tokenSuffix: '}#'
                     useLegacyPattern: false
-                    # Define variables to be replaced in the manifests
-                    # These values come from pipeline variables and the linked variable group 'app-variables-$(environment)'
                     variables: |
                       k8sNamespace = $(k8sNamespace)
-                      acrName = $(acrName) # From Variable Group
+                      acrName = $(acrName)
                       imageAuthApi = $(imageAuthApi)
                       imageUsersApi = $(imageUsersApi)
                       imageTodosApi = $(imageTodosApi)
                       imageLogProcessor = $(imageLogProcessor)
                       imageFrontend = $(imageFrontend)
-                      Build.BuildId = $(Build.BuildId) # The image tag
+                      Build.BuildId = $(Build.BuildId) # Image tag uses BuildId consistently
                       k8sImagePullSecretName = $(k8sImagePullSecretName)
-                      # Add any other variables used as tokens in your YAML files here
-                      # e.g., redisHostName = $(redisHostName)
-                      # e.g., someApiUrl = $(someApiUrl)
 
-                # NOTE: The following tasks operate on the files in $(Build.SourcesDirectory)/$(k8sManifestPath) WITH tokens replaced.
-
-                # STEP 3: Ensure Namespace exists using Apply
+                # STEP 3: Ensure Namespace exists
                 - task: KubernetesManifest@0
                   displayName: Ensure Namespace $(k8sNamespace) exists
                   inputs:
                     action: 'deploy'
-                    kubernetesServiceConnection: '$(aksServiceConnection)' # Use variable for connection name
-                    # namespace: 'default' # Apply runs in default, but creates the target namespace if defined in manifest
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
                     manifests: '$(Build.SourcesDirectory)/$(k8sManifestPath)/namespace.yaml'
 
-                # STEP 4: Create/Update Image Pull Secret
+                # STEP 4: Create/Update Image Pull Secret (Consider removing if AKS-ACR integration is reliable)
                 - task: KubernetesManifest@0
                   displayName: Create/Update Image Pull Secret ($(k8sImagePullSecretName))
                   inputs:
                     action: 'createSecret'
-                    kubernetesServiceConnection: '$(aksServiceConnection)' # Use variable for connection name
-                    namespace: $(k8sNamespace) # Target the correct namespace
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    namespace: $(k8sNamespace)
                     secretType: 'dockerRegistry'
-                    secretName: $(k8sImagePullSecretName) # Defined in variables
-                    dockerRegistryEndpoint: '$(acrServiceConnection)' # Service Connection linked to your ACR
-                    force: true # Allow updates if the secret already exists
+                    secretName: $(k8sImagePullSecretName)
+                    dockerRegistryEndpoint: '$(acrServiceConnection)'
+                    force: true
 
                 # STEP 5: Create/Update Redis Secret
                 - task: KubernetesManifest@0
                   displayName: Create/Update Redis Secret ($(k8sRedisSecretName))
                   inputs:
                     action: 'createSecret'
-                    kubernetesServiceConnection: '$(aksServiceConnection)' # Use variable for connection name
-                    namespace: $(k8sNamespace) # Target the correct namespace
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    namespace: $(k8sNamespace)
                     secretType: 'generic'
-                    secretName: $(k8sRedisSecretName) # Defined in variables
-                    # Ensure redisHostName & redisPrimaryKey are defined in the variable group (redisPrimaryKey marked as secret)
+                    secretName: $(k8sRedisSecretName)
                     secretArguments: '--from-literal=redisHost=$(redisHostName) --from-literal=redisKey=$(redisPrimaryKey)'
-                    force: true # Allow updates
+                    force: true
 
                 # STEP 6: Create/Update App Secrets (JWT)
                 - task: KubernetesManifest@0
                   displayName: Create/Update App Secrets (JWT) ($(k8sAppSecretName))
                   inputs:
                     action: 'createSecret'
-                    kubernetesServiceConnection: '$(aksServiceConnection)' # Use variable for connection name
-                    namespace: $(k8sNamespace) # Target the correct namespace
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    namespace: $(k8sNamespace)
                     secretType: 'generic'
-                    secretName: $(k8sAppSecretName) # Defined in variables
-                    # Ensure jwtSecretValue is defined in the variable group and marked as secret
+                    secretName: $(k8sAppSecretName)
                     secretArguments: '--from-literal=jwtSecret=$(jwtSecretValue)'
-                    force: true # Allow updates
+                    force: true
 
-                # STEP 7: Apply App ConfigMap (if you have one)
-                # Ensure app-configmap.yaml exists in your k8s folder if using this
+                # STEP 7: Apply App ConfigMap
                 - task: KubernetesManifest@0
                   displayName: Apply App ConfigMap
-                  condition: succeeded() # Only run if previous steps succeeded
+                  condition: succeeded()
                   inputs:
-                    action: 'deploy' # Use apply for ConfigMaps
-                    kubernetesServiceConnection: '$(aksServiceConnection)' # Use variable for connection name
-                    namespace: $(k8sNamespace) # Target the correct namespace
-                    # Apply the configmap file AFTER token replacement
+                    action: 'deploy' # Changed to deploy for consistency, acts like apply
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    namespace: $(k8sNamespace)
                     manifests: '$(Build.SourcesDirectory)/$(k8sManifestPath)/app-configmap.yaml'
-                    # force: true # Use if updates often needed, but apply usually handles this
 
-                # STEP 8: Deploy Application Manifests using Apply
+                # STEP 8: Deploy Application Manifests
                 - task: KubernetesManifest@0
                   displayName: Apply Application Manifests
                   inputs:
-                    action: 'deploy' # Use 'apply' for better idempotency
-                    kubernetesServiceConnection: '$(aksServiceConnection)' # Use variable for connection name
-                    namespace: $(k8sNamespace) # Deploy into the correct namespace
-                    # Apply Deployments and Services from the k8s directory (token replaced files)
-                    # Using a wildcard applies all YAMLs in the directory.
-                    # Alternatively, list each file explicitly as before.
+                    action: 'deploy' # Use deploy, it handles create/update
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    namespace: $(k8sNamespace)
                     manifests: |
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/auth-api-deployment.yaml
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/auth-api-service.yaml
@@ -252,53 +263,37 @@ stages:
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/todos-api-deployment.yaml
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/todos-api-service.yaml
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/log-processor-deployment.yaml
-                      # log-processor has no service defined in the list
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/frontend-deployment.yaml
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/frontend-service.yaml
-                    # NOTE: Image substitution is handled by the replacetokens task.
-                    # The 'containers' input is NOT needed here.
-                    # imagePullSecrets should be defined within the deployment manifest's PodSpec template.
+                    # Image tag is now handled via token replacement in the YAML files
 
                 # STEP 9: Verify Deployments and Output Endpoints
                 - task: Bash@3
                   displayName: Verify Deployments & Output Endpoints
+                  # Run even if previous deployment task has issues, to aid debugging
+                  condition: always()
                   inputs:
                     targetType: 'inline'
                     script: |
                       echo "Waiting up to 5 minutes for deployments in namespace $(k8sNamespace) to stabilize..."
-                      # The KubernetesManifest task usually configures kubectl context automatically.
-                      # If context issues arise, you might need to uncomment and configure the az login/get-credentials block below
-                      # Ensure required variables (servicePrincipalId, etc.) are available if uncommenting.
-                      # echo "Attempting to set kubectl context (if needed)..."
-                      # az login --service-principal -u $(servicePrincipalId) -p $(servicePrincipalKey) --tenant $(tenantId) --output none
-                      # az account set --subscription $(subscriptionId)
-                      # az aks get-credentials --resource-group $(aksResourceGroup) --name $(aksClusterName) --overwrite-existing --admin # Use --admin cautiously or configure RBAC properly
-                      # if [ $? -ne 0 ]; then echo "Failed to get AKS credentials."; exit 1; fi
-                      # echo "kubectl context configured."
-
                       # Wait for all deployments in the target namespace to become available
                       if ! kubectl wait --namespace $(k8sNamespace) --for=condition=available deployment --all --timeout=5m; then
                         echo "ERROR: Deployments did not become available in time."
-                        echo "----- Deployment Status -----"
-                        kubectl get deployment -n $(k8sNamespace)
-                        echo "----- Pod Status -----"
-                        kubectl get pods -n $(k8sNamespace) -o wide
-                        echo "----- Pod Events (Recent) -----"
-                        kubectl get events -n $(k8sNamespace) --sort-by='.lastTimestamp' | tail -n 20
-                        # Attempt to get logs from a potentially failing pod (e.g., frontend)
-                        echo "----- Logs from a frontend pod (if available) -----"
-                        kubectl logs -n $(k8sNamespace) -l app=frontend --tail=50 || echo "Could not retrieve frontend logs."
-                        exit 1
+                        # Don't exit immediately, continue to gather debug info
+                      else
+                         echo "All deployments in $(k8sNamespace) are available."
                       fi
 
-                      echo "All deployments in $(k8sNamespace) are available."
                       echo ""
                       echo "=================================================="
-                      echo "Deployment Verification Complete"
+                      echo "Current Deployment Status"
                       echo "Namespace: $(k8sNamespace)"
                       echo "=================================================="
                       echo ""
-                      echo "----- Pods -----"
+                      echo "----- Deployment Status -----"
+                      kubectl get deployment -n $(k8sNamespace)
+                      echo ""
+                      echo "----- Pod Status -----"
                       kubectl get pods -n $(k8sNamespace) -o wide
                       echo ""
                       echo "----- Services -----"
@@ -309,7 +304,7 @@ stages:
                       echo "=================================================="
                       echo ""
 
-                      # Check Frontend LoadBalancer IP (assuming frontend-service is Type=LoadBalancer)
+                      # Check Frontend LoadBalancer IP
                       echo "Checking Frontend LoadBalancer IP (Service: frontend-service)..."
                       FRONTEND_IP=""
                       RETRY_COUNT=0
@@ -328,11 +323,10 @@ stages:
                       else
                         echo "⚠️ WARNING: Frontend LoadBalancer IP could not be retrieved after waiting."
                         echo "   Check 'kubectl get svc frontend-service -n $(k8sNamespace) -o wide' for status."
-                        echo "   LoadBalancer provisioning in Azure can sometimes take longer."
                       fi
                       echo ""
 
-                      # Check API Services (assuming they are ClusterIP and accessed internally or via Ingress)
+                      # Check API Services Cluster IPs
                       echo "Checking API Service Cluster IPs (Internal Access):"
                       for api_svc in auth-api-service users-api-service todos-api-service; do
                         CLUSTER_IP=$(kubectl get svc $api_svc -n $(k8sNamespace) -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
@@ -344,19 +338,44 @@ stages:
                         fi
                       done
                       echo ""
-                      echo "NOTE: API services are likely of type ClusterIP and not directly accessible from outside the cluster unless an Ingress controller is configured."
-                      # STEP 10: Additional Debugging for Failing Pods
+                      echo "=================================================="
+
+                # STEP 10: Additional Debugging for Failing Pods (If any)
                 - task: Bash@3
-                  displayName: 'Debug Failing Pods'
+                  displayName: 'Debug Failing Pods (if any)'
+                  # Run even if previous steps failed to capture logs/events
+                  condition: always()
                   inputs:
                     targetType: 'inline'
                     script: |
-                      echo "==== Pod Status in namespace $(k8sNamespace) ===="
-                      kubectl get pods -n $(k8sNamespace)
+                      echo "==== Checking for non-Running Pods in namespace $(k8sNamespace) ===="
+                      # Get names of pods that are NOT in Running state or whose containers are not Ready (e.g., 0/1 Running)
+                      FAILING_PODS=$(kubectl get pods -n $(k8sNamespace) --field-selector=status.phase!=Running -o name)
+                      READY_BUT_NOT_RUNNING=$(kubectl get pods -n $(k8sNamespace) --field-selector=status.phase=Running -o jsonpath='{range .items[?(@.status.containerStatuses[*].ready==false)]}{.metadata.name}{"\n"}{end}')
 
-                      echo "==== Describe and Log Failing Pods ===="
-                      for pod in $(kubectl get pods -n $(k8sNamespace) --field-selector=status.phase!=Running -o name); do
-                        echo "---- Describing $pod ----"
-                        kubectl describe $pod -n $(k8sNamespace)
-                        echo "---- Logs for $pod ----"
-                        kubectl logs $pod -n $(k8sNamespace) --all-containers=true || true
+                      ALL_ISSUES="${FAILING_PODS} ${READY_BUT_NOT_RUNNING}"
+
+                      if [ -z "$ALL_ISSUES" ]; then
+                        echo "All pods appear to be Running and Ready."
+                        exit 0
+                      fi
+
+                      echo "==== Describe and Log Pods with Issues ===="
+                      # Use xargs to handle potential multiple pod names correctly
+                      echo "$ALL_ISSUES" | xargs -n 1 -I {} bash -c '
+                        pod_name=$(basename {}) # Extract pod name from resource identifier like pod/my-pod-xxxx
+                        echo ""
+                        echo "---- Describing $pod_name ----"
+                        kubectl describe pod $pod_name -n $(k8sNamespace) || echo "Failed to describe $pod_name"
+                        echo ""
+                        echo "---- Current Logs for $pod_name ----"
+                        kubectl logs $pod_name -n $(k8sNamespace) --all-containers=true --tail=100 || echo "Failed to get current logs for $pod_name"
+                        echo ""
+                        echo "---- Previous Logs for $pod_name (if restarted) ----"
+                        kubectl logs $pod_name -n $(k8sNamespace) --all-containers=true --previous --tail=100 || echo "No previous logs or failed to get previous logs for $pod_name"
+                        echo "-------------------------------------"
+                        echo ""
+                      '
+                      # Exit with error if there were failing pods to make pipeline status reflect the issue
+                      echo "Found pods with issues. See logs above."
+                      exit 1

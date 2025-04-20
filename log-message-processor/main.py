@@ -4,59 +4,138 @@ import os
 import json
 import requests
 from py_zipkin.zipkin import zipkin_span, ZipkinAttrs, generate_random_64bit_string
-import time
 import random
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 def log_message(message):
     time_delay = random.randrange(0, 2000)
     time.sleep(time_delay / 1000)
     print('message received after waiting for {}ms: {}'.format(time_delay, message))
 
+def create_redis_connection(redis_host, redis_port, redis_channel):
+    """Create Redis connection with proper error handling and SSL configuration"""
+    try:
+        # Check if we're using the Azure Redis format (SSL)
+        use_ssl = redis_host.endswith('.redis.cache.windows.net')
+        
+        redis_client = redis.Redis(
+            host=redis_host,
+            port=redis_port,
+            db=0,
+            ssl=use_ssl,
+            socket_timeout=10,
+            socket_connect_timeout=10,
+            socket_keepalive=True,
+            health_check_interval=30,
+            retry_on_timeout=True,
+            decode_responses=False  # Keep raw bytes for message decoding
+        )
+        
+        # Check connection
+        redis_client.ping()
+        logger.info(f"Successfully connected to Redis at {redis_host}:{redis_port}")
+        
+        # Create PubSub
+        pubsub = redis_client.pubsub()
+        pubsub.subscribe([redis_channel])
+        logger.info(f"Subscribed to channel: {redis_channel}")
+        
+        return pubsub
+    except redis.exceptions.ConnectionError as e:
+        logger.error(f"Redis connection error: {e}")
+        raise
+
 if __name__ == '__main__':
     redis_host = os.environ['REDIS_HOST']
     redis_port = int(os.environ['REDIS_PORT'])
     redis_channel = os.environ['REDIS_CHANNEL']
     zipkin_url = os.environ['ZIPKIN_URL'] if 'ZIPKIN_URL' in os.environ else ''
+    
+    # Used by Zipkin for sending spans
     def http_transport(encoded_span):
-        requests.post(
-            zipkin_url,
-            data=encoded_span,
-            headers={'Content-Type': 'application/x-thrift'},
-        )
-
-    pubsub = redis.Redis(host=redis_host, port=redis_port, db=0).pubsub()
-    pubsub.subscribe([redis_channel])
-    for item in pubsub.listen():
         try:
-            message = json.loads(str(item['data'].decode("utf-8")))
+            requests.post(
+                zipkin_url,
+                data=encoded_span,
+                headers={'Content-Type': 'application/x-thrift'},
+                timeout=5  # Add timeout to prevent hanging
+            )
         except Exception as e:
-            log_message(e)
-            continue
+            logger.error(f"Failed to send data to Zipkin: {e}")
 
-        if not zipkin_url or 'zipkinSpan' not in message:
-            log_message(message)
-            continue
-
-        span_data = message['zipkinSpan']
+    max_retries = 5
+    retry_delay = 5  # seconds
+    retry_count = 0
+    
+    while retry_count < max_retries:
         try:
-            with zipkin_span(
-                service_name='log-message-processor',
-                zipkin_attrs=ZipkinAttrs(
-                    trace_id=span_data['_traceId']['value'],
-                    span_id=generate_random_64bit_string(),
-                    parent_span_id=span_data['_spanId'],
-                    is_sampled=span_data['_sampled']['value'],
-                    flags=None
-                ),
-                span_name='save_log',
-                transport_handler=http_transport,
-                sample_rate=100
-            ):
-                log_message(message)
+            logger.info(f"Connecting to Redis (attempt {retry_count+1}/{max_retries})...")
+            pubsub = create_redis_connection(redis_host, redis_port, redis_channel)
+            
+            logger.info("Starting message processing loop")
+            for item in pubsub.listen():
+                try:
+                    # Skip subscription confirmation messages
+                    if item['type'] == 'subscribe':
+                        logger.info(f"Subscribed to {item['channel'].decode('utf-8')}")
+                        continue
+                    
+                    # Parse the message
+                    if item['type'] == 'message':
+                        try:
+                            message = json.loads(item['data'].decode("utf-8"))
+                        except Exception as e:
+                            logger.error(f"Failed to parse message: {e}")
+                            log_message(str(e))
+                            continue
+
+                        if not zipkin_url or 'zipkinSpan' not in message:
+                            log_message(message)
+                            continue
+
+                        span_data = message['zipkinSpan']
+                        try:
+                            with zipkin_span(
+                                service_name='log-message-processor',
+                                zipkin_attrs=ZipkinAttrs(
+                                    trace_id=span_data['_traceId']['value'],
+                                    span_id=generate_random_64bit_string(),
+                                    parent_span_id=span_data['_spanId'],
+                                    is_sampled=span_data['_sampled']['value'],
+                                    flags=None
+                                ),
+                                span_name='save_log',
+                                transport_handler=http_transport,
+                                sample_rate=100
+                            ):
+                                log_message(message)
+                        except Exception as e:
+                            logger.error(f"Failed to send data to Zipkin: {e}")
+                            log_message(message)
+                
+                except redis.exceptions.ConnectionError as e:
+                    logger.error(f"Connection error during message processing: {e}")
+                    # Break out of the for loop to trigger reconnection
+                    break
+                except Exception as e:
+                    logger.error(f"Unexpected error during message processing: {e}")
+        
+        except redis.exceptions.ConnectionError as e:
+            logger.error(f"Failed to connect to Redis: {e}")
         except Exception as e:
-            print('did not send data to Zipkin: {}'.format(e))
-            log_message(message)
-
-
-
-
+            logger.error(f"Unexpected error: {e}")
+        
+        # We'll reach here if the inner loop breaks due to an error 
+        retry_count += 1
+        if retry_count < max_retries:
+            logger.info(f"Retrying in {retry_delay} seconds...")
+            time.sleep(retry_delay)
+            # Exponential backoff for retry delay
+            retry_delay = min(retry_delay * 2, 60)  # Max 60 seconds
+        else:
+            logger.error(f"Max retries ({max_retries}) reached. Giving up.")
+            break
