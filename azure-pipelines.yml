@@ -350,3 +350,20 @@ stages:
                   echo ""
                   echo "NOTE: API services are likely of type ClusterIP and not directly accessible from outside the cluster unless an Ingress controller is configured."
                   echo "=================================================="
+
+            # STEP 10: Additional Debugging for Failing Pods
+            - task: Bash@3
+              displayName: 'Debug Failing Pods'
+              inputs:
+                targetType: 'inline'
+                script: |
+                  echo "==== Pod Status in namespace $(k8sNamespace) ===="
+                  kubectl get pods -n $(k8sNamespace)
+
+                  echo "==== Describe and Log Failing Pods ===="
+                  for pod in $(kubectl get pods -n $(k8sNamespace) --field-selector=status.phase!=Running -o name); do
+                    echo "---- Describing $pod ----"
+                    kubectl describe $pod -n $(k8sNamespace)
+                    echo "---- Logs for $pod ----"
+                    kubectl logs $pod -n $(k8sNamespace) --all-containers=true || true
+                  done
