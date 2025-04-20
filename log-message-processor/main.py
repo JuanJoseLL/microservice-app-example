@@ -122,10 +122,13 @@ if __name__ == '__main__':
                             logger.error(f"Failed to send data to Zipkin: {e}")
                             log_message(message)
                 
+                except redis.exceptions.TimeoutError as e:
+                    # don't break on idle timeouts, just log and keep listening
+                    logger.warning(f"Redis socket timeout (no data): {e}, continuing to listen")
+                    continue
                 except redis.exceptions.ConnectionError as e:
                     logger.error(f"Connection error during message processing: {e}")
-                    # Break out of the for loop to trigger reconnection
-                    break
+                    break  # go reconnect
                 except Exception as e:
                     logger.error(f"Unexpected error during message processing: {e}")
         
