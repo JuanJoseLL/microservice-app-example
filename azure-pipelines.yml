@@ -184,11 +184,8 @@ stages:
                 action: 'deploy' 
                 kubernetesServiceConnection: '$(aksServiceConnection)' # Use variable for connection name
                 # namespace: 'default' # Apply runs in default, but creates the target namespace if defined in manifest
-                manifests: |
-                  apiVersion: v1
-                  kind: Namespace
-                  metadata:
-                    name: $(k8sNamespace) # Use pipeline variable directly
+                manifests: '$(Build.SourcesDirectory)/$(k8sManifestPath)/namespace.yaml'
+                  
 
             # STEP 4: Create/Update Image Pull Secret
             - task: KubernetesManifest@0
