@@ -108,11 +108,11 @@ stages:
       and(succeeded(),
         or(
           eq(variables['Build.Reason'], 'Manual'),
-          and(eq('${{ matrix.buildContext }}', 'auth-api'), eq(variables['ChangedAuthApi'], 'true')),
-          and(eq('${{ matrix.buildContext }}', 'users-api'), eq(variables['ChangedUsersApi'], 'true')),
-          and(eq('${{ matrix.buildContext }}', 'todos-api'), eq(variables['ChangedTodosApi'], 'true')),
-          and(eq('${{ matrix.buildContext }}', 'log-message-processor'), eq(variables['ChangedLogProcessor'], 'true')),
-          and(eq('${{ matrix.buildContext }}', 'frontend'), eq(variables['ChangedFrontend'], 'true'))
+          and(eq(variables['buildContext'], 'auth-api'), eq(variables['ChangedAuthApi'], 'true')),
+          and(eq(variables['buildContext'], 'users-api'), eq(variables['ChangedUsersApi'], 'true')),
+          and(eq(variables['buildContext'], 'todos-api'), eq(variables['ChangedTodosApi'], 'true')),
+          and(eq(variables['buildContext'], 'log-message-processor'), eq(variables['ChangedLogProcessor'], 'true')),
+          and(eq(variables['buildContext'], 'frontend'), eq(variables['ChangedFrontend'], 'true'))
         )
       )
     strategy:
