@@ -30,8 +30,7 @@ def create_redis_connection(redis_host, redis_port, redis_channel):
             socket_timeout=10,
             socket_connect_timeout=10,
             socket_keepalive=True,
-            health_check_interval=30,
-            retry_on_timeout=True,
+            
             decode_responses=False  # Keep raw bytes for message decoding
         )
         
