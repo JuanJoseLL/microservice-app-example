@@ -41,7 +41,7 @@ func main() {
 			"johnd_foo":   nil,
 			"janed_ddd":   nil,
 		},
-	}// // Initialize user service with allowed hashesddddddd
+	}// // Initialize user service with allowed hashesdddddddfe
 
 	e := echo.New()
 	e.Logger.SetLevel(gommonlog.INFO)

@@ -28,7 +28,7 @@ spec:
             configMapKeyRef:
               name: app-config
               key: USERS_API_PORT
-        - name: JWT_SECRET # Read from the 'app-secrets' secret
+        - name: JWT_SECRET # Read from the 'app-secrets' secretef
           valueFrom:
             secretKeyRef:
               name: app-secrets

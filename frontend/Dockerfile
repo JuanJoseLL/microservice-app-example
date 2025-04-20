@@ -14,7 +14,12 @@
     # ---- Production Stage ----
     FROM nginx:stable-alpine AS production-stage
     COPY --from=build-stage /app/dist /usr/share/nginx/html
-    # Copy nginx config if you have a custom one
-    # COPY nginx.conf /etc/nginx/conf.d/default.conf
-    EXPOSE 80
+    
+    # Copy your custom Nginx config to overwrite the default
+    # Assumes your custom file is named nginx.conf and is in the same directory as the Dockerfile
+    COPY nginx.conf /etc/nginx/conf.d/default.conf
+    
+    # Expose the port Nginx will actually listen on
+    EXPOSE 8080
+    
     CMD ["nginx", "-g", "daemon off;"]

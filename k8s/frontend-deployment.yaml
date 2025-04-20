@@ -28,7 +28,7 @@ spec:
             configMapKeyRef:
               name: app-config
               key: FRONTEND_PORT
-        - name: AUTH_API_ADDRESS # Address of the K8s Service for Auth API
+        - name: AUTH_API_ADDRESS # Address of the K8s Service for Auth APIfe
           valueFrom:
             configMapKeyRef:
               name: app-config

@@ -23,7 +23,7 @@ spec:
         ports:
         - containerPort: 8082 # Must match TODO_API_PORT
         env:
-        - name: TODO_API_PORT # Port the Node app listens onxsa
+        - name: TODO_API_PORT # Port the Node app listens onxsafe
           valueFrom:
             configMapKeyRef:
               name: app-config

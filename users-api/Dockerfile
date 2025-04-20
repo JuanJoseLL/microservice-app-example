@@ -6,7 +6,7 @@ RUN mvn dependency:go-offline
 COPY src ./src
 RUN mvn package -DskipTests
 
-# Package stage
+# Package stageefef
 FROM openjdk:8-jdk-slim
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
