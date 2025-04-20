@@ -19,7 +19,27 @@ pool:
   vmImage: ubuntu-latest
 
 variables:
-  # ... (environment, group, image names, k8s details - same as before, remove k8sImagePullSecretName if not used) ...
+  # Determine environment based on branch
+  - name: environment
+    ${{ if eq(variables['Build.SourceBranchName'], 'master') }}:
+      value: 'prod'
+    ${{ if eq(variables['Build.SourceBranchName'], 'dev') }}:
+      value: 'dev'
+  - group: app-variables-${{ variables.environment }}
+
+  # Define image names consistently
+  - name: imageAuthApi
+    value: 'auth-api'
+  - name: imageUsersApi
+    value: 'users-api'
+  - name: imageTodosApi
+    value: 'todos-api'
+  - name: imageLogProcessor
+    value: 'log-message-processor'
+  - name: imageFrontend
+    value: 'frontend'
+
+  # Kubernetes details
   - name: k8sNamespace
     value: 'apps-$(environment)'
   - name: k8sRedisSecretName
@@ -28,6 +48,8 @@ variables:
     value: 'app-secrets'
   - name: k8sManifestPath
     value: 'k8s'
+
+  # Service Connection Names
   - name: acrServiceConnection
     value: 'ACR-Service-Connection' # Replace
   - name: aksServiceConnection
@@ -35,27 +57,37 @@ variables:
 
 stages:
   # =========================================================================
-  # Stage 1: Build and Push ONLY CHANGED Docker Images with Commit SHA Tag
+  # Stage 1: Build and Push ONLY CHANGED Docker Images
   # =========================================================================
   - stage: BuildAndPush
-    displayName: Build & Push Changed Images w/ Commit SHA
+    displayName: Build & Push Changed Images
     jobs:
       - job: BuildPushMatrix
         displayName: Build and Push Services
         strategy:
           matrix:
-            AuthApi: { imageName: $(imageAuthApi), buildContext: 'auth-api' }
-            UsersApi: { imageName: $(imageUsersApi), buildContext: 'users-api' }
-            TodosApi: { imageName: $(imageTodosApi), buildContext: 'todos-api' }
-            LogProcessor: { imageName: $(imageLogProcessor), buildContext: 'log-message-processor' }
-            Frontend: { imageName: $(imageFrontend), buildContext: 'frontend' }
+            AuthApi:
+              imageName: $(imageAuthApi)
+              buildContext: 'auth-api'
+            UsersApi:
+              imageName: $(imageUsersApi)
+              buildContext: 'users-api'
+            TodosApi:
+              imageName: $(imageTodosApi)
+              buildContext: 'todos-api'
+            LogProcessor:
+              imageName: $(imageLogProcessor)
+              buildContext: 'log-message-processor'
+            Frontend:
+              imageName: $(imageFrontend)
+              buildContext: 'frontend'
         steps:
           - checkout: self
             fetchDepth: 0
             displayName: Checkout Full History
 
           - task: Bash@3
-            name: DetectChanges
+            name: DetectChanges # Step name for output reference
             displayName: 'Detect Changes in $(buildContext)'
             inputs:
               targetType: 'inline'
@@ -69,10 +101,11 @@ stages:
                 else
                   echo "No changes detected in $(buildContext)."
                 fi
+                # Set output variable for this job instance
                 echo "##vso[task.setvariable variable=ShouldBuild;isOutput=true]$SHOULD_BUILD"
 
           - task: Docker@2
-            displayName: 'Build and Push $(imageName) with Commit SHA $(Build.SourceVersion) (if changed)'
+            displayName: 'Build and Push $(imageName) (if changed)'
             condition: eq(variables['DetectChanges.ShouldBuild'], 'true')
             inputs:
               containerRegistry: '$(acrServiceConnection)'
@@ -80,16 +113,15 @@ stages:
               command: 'buildAndPush'
               Dockerfile: '$(Build.SourcesDirectory)/$(buildContext)/Dockerfile'
               buildContext: '$(Build.SourcesDirectory)/$(buildContext)'
-              tags: '$(Build.SourceVersion)' # <-- Use Commit SHA for tag
+              tags: '$(Build.BuildId)'
               addPipelineData: false
 
   # =========================================================================
-  # Stage 2: Deploy to AKS (Using Commit SHA Tag)
+  # Stage 2: Deploy to AKS
   # =========================================================================
   - stage: DeployToAKS
     displayName: Deploy Applications to AKS
     dependsOn: BuildAndPush
-    # Run if build stage finished (even if skipped) and branch is right
     condition: and(in(dependencies.BuildAndPush.result, 'Succeeded', 'SucceededWithIssues', 'Skipped'), or(eq(variables['Build.SourceBranchName'], 'master'), eq(variables['Build.SourceBranchName'], 'dev')))
     jobs:
       - deployment: DeployApps
@@ -101,12 +133,32 @@ stages:
               steps:
                 # STEP 0: Checkout
                 - checkout: self
+                  fetchDepth: 0
                   displayName: Checkout Repository
 
-                # STEP 1: Debug K8s Directory Check
+                # STEP 1: Detect K8s/Pipeline Changes
+                - task: Bash@3
+                  name: DetectInfraChanges # Step name for output reference
+                  displayName: 'Detect Changes in k8s/ or Pipeline YAML'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      set -e
+                      FORCE_DEPLOY="false"
+                      echo "Checking for changes in k8s/ or azure-pipelines-app.yml between HEAD~1 and HEAD"
+                      if ! git diff --quiet HEAD~1 HEAD -- "$(Build.SourcesDirectory)/k8s/" "$(Build.SourcesDirectory)/azure-pipelines-app.yml"; then
+                        echo "Changes detected in k8s/ or pipeline YAML. Forcing deployment of all services."
+                        FORCE_DEPLOY="true"
+                      else
+                        echo "No infrastructure changes detected."
+                      fi
+                      # Set output variable for this job
+                      echo "##vso[task.setvariable variable=ForceDeploy;isOutput=true]$FORCE_DEPLOY"
+
+                # STEP 1.5: Debug K8s Directory Check
                 - task: Bash@3
                   displayName: 'Debug: Check for K8s Manifests Directory'
-                  # ... (script as before) ...
+                  # ... (script as before, with 'fi' added) ...
                   inputs:
                     targetType: 'inline'
                     script: |
@@ -123,7 +175,7 @@ stages:
                         exit 1
                       fi
 
-                # STEP 2: Replace Tokens (Using Commit SHA)
+                # STEP 2: Replace Tokens
                 - task: replacetokens@5
                   displayName: 'Replace Tokens in K8s Manifests'
                   inputs:
@@ -139,17 +191,15 @@ stages:
                     variables: |
                       k8sNamespace = $(k8sNamespace)
                       acrName = $(acrName)
-                      commitSHA = $(Build.SourceVersion) # Use commit SHA
+                      Build.BuildId = $(Build.BuildId) # Still replace tag everywhere
 
                 # STEP 3: Ensure Namespace exists
                 - task: KubernetesManifest@0
                   displayName: Ensure Namespace $(k8sNamespace) exists
-                  # ... (inputs as before) ...
                   inputs:
                     action: 'deploy'
                     kubernetesServiceConnection: '$(aksServiceConnection)'
                     manifests: '$(Build.SourcesDirectory)/$(k8sManifestPath)/namespace.yaml'
-
 
                 # STEP 4: Create/Update Secrets
                 - task: KubernetesManifest@0
@@ -186,25 +236,110 @@ stages:
                     namespace: $(k8sNamespace)
                     manifests: '$(Build.SourcesDirectory)/$(k8sManifestPath)/app-configmap.yaml'
 
+                # --- NEW STEP 5.5: Prepare Deployment Flags ---
+                - task: Bash@3
+                  name: PrepareDeployFlags
+                  displayName: Prepare Deployment Flags
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      echo "Preparing deployment flags..."
+                      # Default flags to false
+                      echo "##vso[task.setvariable variable=DeployAuthApi]false"
+                      echo "##vso[task.setvariable variable=DeployUsersApi]false"
+                      echo "##vso[task.setvariable variable=DeployTodosApi]false"
+                      echo "##vso[task.setvariable variable=DeployLogProcessor]false"
+                      echo "##vso[task.setvariable variable=DeployFrontend]false"
 
-                # --- STEP 6: Apply ALL Application Manifests ---
-                # No conditions needed now, kubectl apply handles idempotency
+                      # Check if forced deployment is needed
+                      force_deploy="$(DetectInfraChanges.ForceDeploy)"
+                      echo "Force Deploy Flag: $force_deploy"
+
+                      # Check build outputs for each service
+                      # Note: Accessing dependency outputs uses dot notation in agent variables
+                      auth_built="$(BuildAndPush.BuildPushMatrix_AuthApi.DetectChanges.ShouldBuild)"
+                      users_built="$(BuildAndPush.BuildPushMatrix_UsersApi.DetectChanges.ShouldBuild)"
+                      todos_built="$(BuildAndPush.BuildPushMatrix_TodosApi.DetectChanges.ShouldBuild)"
+                      logproc_built="$(BuildAndPush.BuildPushMatrix_LogProcessor.DetectChanges.ShouldBuild)"
+                      frontend_built="$(BuildAndPush.BuildPushMatrix_Frontend.DetectChanges.ShouldBuild)"
+
+                      echo "Build Flags: Auth=$auth_built, Users=$users_built, Todos=$todos_built, LogProc=$logproc_built, Frontend=$frontend_built"
+
+                      if [[ "$force_deploy" == "true" || "$auth_built" == "true" ]]; then
+                        echo "Setting DeployAuthApi=true"
+                        echo "##vso[task.setvariable variable=DeployAuthApi]true"
+                      fi
+                      if [[ "$force_deploy" == "true" || "$users_built" == "true" ]]; then
+                        echo "Setting DeployUsersApi=true"
+                        echo "##vso[task.setvariable variable=DeployUsersApi]true"
+                      fi
+                      if [[ "$force_deploy" == "true" || "$todos_built" == "true" ]]; then
+                        echo "Setting DeployTodosApi=true"
+                        echo "##vso[task.setvariable variable=DeployTodosApi]true"
+                      fi
+                      if [[ "$force_deploy" == "true" || "$logproc_built" == "true" ]]; then
+                        echo "Setting DeployLogProcessor=true"
+                        echo "##vso[task.setvariable variable=DeployLogProcessor]true"
+                      fi
+                      if [[ "$force_deploy" == "true" || "$frontend_built" == "true" ]]; then
+                        echo "Setting DeployFrontend=true"
+                        echo "##vso[task.setvariable variable=DeployFrontend]true"
+                      fi
+
+                # --- STEP 6: Conditional Service Deployments (Using simple variables) ---
+
                 - task: KubernetesManifest@0
-                  displayName: Apply Application Manifests
+                  displayName: Apply Auth API Manifests (if changed or forced)
+                  # Condition checks the variable set in the PrepareDeployFlags step
+                  condition: eq(variables['DeployAuthApi'], 'true')
                   inputs:
                     action: 'deploy'
                     kubernetesServiceConnection: '$(aksServiceConnection)'
                     namespace: $(k8sNamespace)
-                    # Apply all relevant manifests from the k8s directory
-                    # Ensure your YAML files use #{commitSHA}# for the image tag
                     manifests: |
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/auth-api-deployment.yaml
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/auth-api-service.yaml
+
+                - task: KubernetesManifest@0
+                  displayName: Apply Users API Manifests (if changed or forced)
+                  condition: eq(variables['DeployUsersApi'], 'true')
+                  inputs:
+                    action: 'deploy'
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    namespace: $(k8sNamespace)
+                    manifests: |
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/users-api-deployment.yaml
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/users-api-service.yaml
+
+                - task: KubernetesManifest@0
+                  displayName: Apply Todos API Manifests (if changed or forced)
+                  condition: eq(variables['DeployTodosApi'], 'true')
+                  inputs:
+                    action: 'deploy'
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    namespace: $(k8sNamespace)
+                    manifests: |
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/todos-api-deployment.yaml
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/todos-api-service.yaml
+
+                - task: KubernetesManifest@0
+                  displayName: Apply Log Processor Manifests (if changed or forced)
+                  condition: eq(variables['DeployLogProcessor'], 'true')
+                  inputs:
+                    action: 'deploy'
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    namespace: $(k8sNamespace)
+                    manifests: |
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/log-processor-deployment.yaml
+
+                - task: KubernetesManifest@0
+                  displayName: Apply Frontend Manifests (if changed or forced)
+                  condition: eq(variables['DeployFrontend'], 'true')
+                  inputs:
+                    action: 'deploy'
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    namespace: $(k8sNamespace)
+                    manifests: |
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/frontend-deployment.yaml
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/frontend-service.yaml
 

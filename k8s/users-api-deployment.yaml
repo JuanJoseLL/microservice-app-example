@@ -18,7 +18,7 @@ spec:
       
       containers:
       - name: users-api
-        image: #{acrName}#.azurecr.io/#{imageAuthApi}#:#{commitSHA}#
+        image: #{acrName}#.azurecr.io/#{imageUsersApi}#:#{Build.BuildId}#
         ports:
         - containerPort: 8083 # Must match SERVER_PORT
         env:

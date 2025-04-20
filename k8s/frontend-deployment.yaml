@@ -18,7 +18,7 @@ spec:
       
       containers:
       - name: frontend
-        image: #{acrName}#.azurecr.io/#{imageAuthApi}#:#{commitSHA}#
+        image: #{acrName}#.azurecr.io/#{imageFrontend}#:#{Build.BuildId}#
         ports:
         - containerPort: 8080 # Must match PORT
         env:

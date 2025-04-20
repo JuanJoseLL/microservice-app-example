@@ -18,7 +18,7 @@ spec:
       
       containers:
       - name: todos-api
-        image: #{acrName}#.azurecr.io/#{imageAuthApi}#:#{commitSHA}#
+        image: #{acrName}#.azurecr.io/#{imageTodosApi}#:#{Build.BuildId}#
         ports:
         - containerPort: 8082 # Must match TODO_API_PORT
         env:
