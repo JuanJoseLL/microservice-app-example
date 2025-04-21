@@ -13,7 +13,7 @@ class TodoController {
         this._logChannel = logChannel;
     }
 
-    // TODO: these methods are not concurrent-safe
+    // TODO: these methods are not concurrent-safess
     list (req, res) {
         const data = this._getTodoData(req.user.username)
 

@@ -28,6 +28,7 @@ func main() {
 	hostport := ":" + os.Getenv("AUTH_API_PORT")
 	userAPIAddress := os.Getenv("USERS_API_ADDRESS")
 	fmt.Printf("Starting auth API on %s\n", hostport)
+	fmt.Printf("Connecting to user API at %s\n", userAPIAddress)
 	envJwtSecret := os.Getenv("JWT_SECRET")
 	if len(envJwtSecret) != 0 {
 		jwtSecret = envJwtSecret

@@ -23,7 +23,7 @@ spec:
         ports:
         - containerPort: 8000 # Must match AUTH_API_PORT if set via env
         env:
-        - name: AUTH_API_PORT # Port the Go app listens onfe
+        - name: AUTH_API_PORT # Port the Go app listens onfes
           valueFrom:
             configMapKeyRef:
               name: app-config

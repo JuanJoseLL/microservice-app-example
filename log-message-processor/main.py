@@ -19,7 +19,7 @@ def log_message(message):
 def create_redis_connection(redis_host, redis_port, redis_channel, redis_password):
     """Create Redis connection with proper error handling and SSL configuration"""
     try:
-        # Check if we're using the Azure Redis format (SSL)
+        # Check if we're using the Azure Redis format (SSL)s
         use_ssl = redis_host.endswith('.redis.cache.windows.net')
         logger.info(f"Attempting Redis connection to {redis_host}:{redis_port} with SSL={use_ssl}")
         redis_client = redis.Redis(

@@ -23,7 +23,7 @@ spec:
         ports:
         - containerPort: 8083 # Must match SERVER_PORT
         env:
-        - name: SERVER_PORT # Port the Spring Boot app listens onsax
+        - name: SERVER_PORT # Port the Spring Boot app listens onsaxs
           valueFrom:
             configMapKeyRef:
               name: app-config
