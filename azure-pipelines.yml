@@ -225,13 +225,18 @@ stages:
                       for svc in AuthApi UsersApi TodosApi LogProcessor Frontend; do
                         echo "##vso[task.setvariable variable=Deploy$svc]false"
                       done
-                      # Check build outputs for each service
-                      auth_built="$(BuildAndPush.BuildPushMatrix_AuthApi.DetectChanges.ShouldBuild)"
-                      users_built="$(BuildAndPush.BuildPushMatrix_UsersApi.DetectChanges.ShouldBuild)"
-                      todos_built="$(BuildAndPush.BuildPushMatrix_TodosApi.DetectChanges.ShouldBuild)"
-                      logproc_built="$(BuildAndPush.BuildPushMatrix_LogProcessor.DetectChanges.ShouldBuild)"
-                      frontend_built="$(BuildAndPush.BuildPushMatrix_Frontend.DetectChanges.ShouldBuild)"
+
+                      # Correctly access output variables from the BuildAndPush stage
+                      # Note: The job name 'BuildPushMatrix' and task name 'DetectChanges' are used.
+                      # The matrix strategy generates job names like 'BuildPushMatrix_AuthApi'.
+                      auth_built="$(dependencies.BuildAndPush.outputs['BuildPushMatrix_AuthApi.DetectChanges.ShouldBuild'])"
+                      users_built="$(dependencies.BuildAndPush.outputs['BuildPushMatrix_UsersApi.DetectChanges.ShouldBuild'])"
+                      todos_built="$(dependencies.BuildAndPush.outputs['BuildPushMatrix_TodosApi.DetectChanges.ShouldBuild'])"
+                      logproc_built="$(dependencies.BuildAndPush.outputs['BuildPushMatrix_LogProcessor.DetectChanges.ShouldBuild'])"
+                      frontend_built="$(dependencies.BuildAndPush.outputs['BuildPushMatrix_Frontend.DetectChanges.ShouldBuild'])"
+
                       echo "Build Flags: Auth=$auth_built, Users=$users_built, Todos=$todos_built, LogProc=$logproc_built, Frontend=$frontend_built"
+
                       # Set deploy flags for services with changes
                       [[ "$auth_built" == "true" ]] && echo "##vso[task.setvariable variable=DeployAuthApi]true"
                       [[ "$users_built" == "true" ]] && echo "##vso[task.setvariable variable=DeployUsersApi]true"
@@ -304,7 +309,7 @@ stages:
                     kubernetesServiceConnection: '$(aksServiceConnection)'
                     namespace: '$(k8sNamespace)'
                     command: 'wait'
-                    arguments: '--for=condition=available deployment --all --timeout=300s'
+                    arguments: 'deployment --all --for=condition=available --timeout=300s'
 
                 - task: Kubectl@1
                   displayName: 'List Deployments'
