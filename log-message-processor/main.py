@@ -28,11 +28,10 @@ def create_redis_connection(redis_host, redis_port, redis_channel, redis_passwor
             db=0,
             password=redis_password,
             ssl=use_ssl,
-            socket_timeout=10,
+            socket_timeout=None,           # Block indefinitely instead of timing out
             socket_connect_timeout=10,
             socket_keepalive=True,
-            
-            decode_responses=False  # Keep raw bytes for message decoding
+            decode_responses=False        # Keep raw bytes for message decoding
         )
         
         # Check connection
@@ -82,14 +81,17 @@ if __name__ == '__main__':
             pubsub = create_redis_connection(redis_host, redis_port, redis_channel, redis_password)
             
             logger.info("Starting message processing loop")
-            for item in pubsub.listen():
+            # Use get_message with timeout to avoid socket read errors
+            while True:
                 try:
+                    item = pubsub.get_message(timeout=1)
+                    if not item:
+                        continue
                     # Skip subscription confirmation messages
                     if item['type'] == 'subscribe':
                         logger.info(f"Subscribed to {item['channel'].decode('utf-8')}")
                         continue
-                    
-                    # Parse the message
+                    # Parse and handle message
                     if item['type'] == 'message':
                         try:
                             message = json.loads(item['data'].decode("utf-8"))
@@ -97,11 +99,9 @@ if __name__ == '__main__':
                             logger.error(f"Failed to parse message: {e}")
                             log_message(str(e))
                             continue
-
                         if not zipkin_url or 'zipkinSpan' not in message:
                             log_message(message)
                             continue
-
                         span_data = message['zipkinSpan']
                         try:
                             with zipkin_span(

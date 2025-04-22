@@ -136,29 +136,9 @@ stages:
                   fetchDepth: 0
                   displayName: Checkout Repository
 
-                # STEP 1: Detect K8s/Pipeline Changes
-                - task: Bash@3
-                  name: DetectInfraChanges # Step name for output reference
-                  displayName: 'Detect Changes in k8s/ or Pipeline YAML'
-                  inputs:
-                    targetType: 'inline'
-                    script: |
-                      set -e
-                      FORCE_DEPLOY="false"
-                      echo "Checking for changes in k8s/ or azure-pipelines-app.yml between HEAD~1 and HEAD"
-                      if ! git diff --quiet HEAD~1 HEAD -- "$(Build.SourcesDirectory)/k8s/" "$(Build.SourcesDirectory)/azure-pipelines-app.yml"; then
-                        echo "Changes detected in k8s/ or pipeline YAML. Forcing deployment of all services."
-                        FORCE_DEPLOY="true"
-                      else
-                        echo "No infrastructure changes detected."
-                      fi
-                      # Set output variable for this job
-                      echo "##vso[task.setvariable variable=ForceDeploy;isOutput=true]$FORCE_DEPLOY"
-
-                # STEP 1.5: Debug K8s Directory Check
+                # STEP 1: Debug K8s Directory Check
                 - task: Bash@3
                   displayName: 'Debug: Check for K8s Manifests Directory'
-                  # ... (script as before, with 'fi' added) ...
                   inputs:
                     targetType: 'inline'
                     script: |
@@ -173,7 +153,6 @@ stages:
                       else
                         echo "ERROR: Directory $(Build.SourcesDirectory)/$(k8sManifestPath) NOT FOUND."
                         exit 1
-                      fi
 
                 # STEP 2: Replace Tokens
                 - task: replacetokens@5
@@ -204,7 +183,6 @@ stages:
                 # STEP 4: Create/Update Secrets
                 - task: KubernetesManifest@0
                   displayName: Create/Update Redis Secret ($(k8sRedisSecretName))
-                  # ... (inputs as before) ...
                   inputs:
                     action: 'createSecret'
                     kubernetesServiceConnection: '$(aksServiceConnection)'
@@ -216,7 +194,6 @@ stages:
 
                 - task: KubernetesManifest@0
                   displayName: Create/Update App Secrets (JWT) ($(k8sAppSecretName))
-                  # ... (inputs as before) ...
                   inputs:
                     action: 'createSecret'
                     kubernetesServiceConnection: '$(aksServiceConnection)'
@@ -229,14 +206,13 @@ stages:
                 # STEP 5: Apply App ConfigMap
                 - task: KubernetesManifest@0
                   displayName: Apply App ConfigMap
-                  # ... (inputs as before) ...
                   inputs:
                     action: 'deploy'
                     kubernetesServiceConnection: '$(aksServiceConnection)'
                     namespace: $(k8sNamespace)
                     manifests: '$(Build.SourcesDirectory)/$(k8sManifestPath)/app-configmap.yaml'
 
-                # --- NEW STEP 5.5: Prepare Deployment Flags ---
+                # --- UPDATED STEP: Prepare Deployment Flags (deploy only changed services) ---
                 - task: Bash@3
                   name: PrepareDeployFlags
                   displayName: Prepare Deployment Flags
@@ -245,52 +221,27 @@ stages:
                     script: |
                       echo "Preparing deployment flags..."
                       # Default flags to false
-                      echo "##vso[task.setvariable variable=DeployAuthApi]false"
-                      echo "##vso[task.setvariable variable=DeployUsersApi]false"
-                      echo "##vso[task.setvariable variable=DeployTodosApi]false"
-                      echo "##vso[task.setvariable variable=DeployLogProcessor]false"
-                      echo "##vso[task.setvariable variable=DeployFrontend]false"
-
-                      # Check if forced deployment is needed
-                      force_deploy="$(DetectInfraChanges.ForceDeploy)"
-                      echo "Force Deploy Flag: $force_deploy"
-
+                      for svc in AuthApi UsersApi TodosApi LogProcessor Frontend; do
+                        echo "##vso[task.setvariable variable=Deploy$svc]false"
+                      done
                       # Check build outputs for each service
-                      # Note: Accessing dependency outputs uses dot notation in agent variables
                       auth_built="$(BuildAndPush.BuildPushMatrix_AuthApi.DetectChanges.ShouldBuild)"
                       users_built="$(BuildAndPush.BuildPushMatrix_UsersApi.DetectChanges.ShouldBuild)"
                       todos_built="$(BuildAndPush.BuildPushMatrix_TodosApi.DetectChanges.ShouldBuild)"
                       logproc_built="$(BuildAndPush.BuildPushMatrix_LogProcessor.DetectChanges.ShouldBuild)"
                       frontend_built="$(BuildAndPush.BuildPushMatrix_Frontend.DetectChanges.ShouldBuild)"
-
                       echo "Build Flags: Auth=$auth_built, Users=$users_built, Todos=$todos_built, LogProc=$logproc_built, Frontend=$frontend_built"
-
-                      if [[ "$force_deploy" == "true" || "$auth_built" == "true" ]]; then
-                        echo "Setting DeployAuthApi=true"
-                        echo "##vso[task.setvariable variable=DeployAuthApi]true"
-                      fi
-                      if [[ "$force_deploy" == "true" || "$users_built" == "true" ]]; then
-                        echo "Setting DeployUsersApi=true"
-                        echo "##vso[task.setvariable variable=DeployUsersApi]true"
-                      fi
-                      if [[ "$force_deploy" == "true" || "$todos_built" == "true" ]]; then
-                        echo "Setting DeployTodosApi=true"
-                        echo "##vso[task.setvariable variable=DeployTodosApi]true"
-                      fi
-                      if [[ "$force_deploy" == "true" || "$logproc_built" == "true" ]]; then
-                        echo "Setting DeployLogProcessor=true"
-                        echo "##vso[task.setvariable variable=DeployLogProcessor]true"
-                      fi
-                      if [[ "$force_deploy" == "true" || "$frontend_built" == "true" ]]; then
-                        echo "Setting DeployFrontend=true"
-                        echo "##vso[task.setvariable variable=DeployFrontend]true"
-                      fi
+                      # Set deploy flags for services with changes
+                      [[ "$auth_built" == "true" ]] && echo "##vso[task.setvariable variable=DeployAuthApi]true"
+                      [[ "$users_built" == "true" ]] && echo "##vso[task.setvariable variable=DeployUsersApi]true"
+                      [[ "$todos_built" == "true" ]] && echo "##vso[task.setvariable variable=DeployTodosApi]true"
+                      [[ "$logproc_built" == "true" ]] && echo "##vso[task.setvariable variable=DeployLogProcessor]true"
+                      [[ "$frontend_built" == "true" ]] && echo "##vso[task.setvariable variable=DeployFrontend]true"
 
                 # --- STEP 6: Conditional Service Deployments (Using simple variables) ---
 
                 - task: KubernetesManifest@0
                   displayName: Apply Auth API Manifests (if changed or forced)
-                  # Condition checks the variable set in the PrepareDeployFlags step
                   condition: eq(variables['DeployAuthApi'], 'true')
                   inputs:
                     action: 'deploy'
@@ -343,76 +294,48 @@ stages:
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/frontend-deployment.yaml
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/frontend-service.yaml
 
-                # STEP 7: Verify Deployments & Output Endpoints
-                - task: Bash@3
-                  displayName: Verify Deployments & Output Endpoints
+                # STEP 7: Wait and List Resources via Kubectl@1
+                - task: Kubectl@1
+                  displayName: 'Wait for all deployments to become available'
                   condition: always()
-                  # ... (script remains the same) ...
                   inputs:
-                    targetType: 'inline'
-                    script: |
-                      echo "Waiting up to 5 minutes for deployments in namespace $(k8sNamespace) to stabilize..."
-                      if ! kubectl wait --namespace $(k8sNamespace) --for=condition=available deployment --all --timeout=5m; then
-                        echo "WARNING: Not all deployments became available/stable within the timeout."
-                      else
-                         echo "All relevant deployments in $(k8sNamespace) appear available/stable."
-                      fi
-                      echo ""
-                      echo "=================================================="
-                      echo "Current Deployment Status"
-                      echo "Namespace: $(k8sNamespace)"
-                      echo "=================================================="
-                      echo ""
-                      echo "----- Deployment Status -----"
-                      kubectl get deployment -n $(k8sNamespace)
-                      echo ""
-                      echo "----- Pod Status -----"
-                      kubectl get pods -n $(k8sNamespace) -o wide
-                      echo ""
-                      echo "----- Services -----"
-                      kubectl get svc -n $(k8sNamespace) -o wide
-                      echo ""
-                      echo "=================================================="
-                      echo " Checking Service Endpoints..."
-                      echo "=================================================="
-                      echo ""
-                      echo "Checking Frontend LoadBalancer IP (Service: frontend-service)..."
-                      FRONTEND_IP=""
-                      RETRY_COUNT=0
-                      MAX_RETRIES=6
-                      while [ -z "$FRONTEND_IP" ] && [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-                        FRONTEND_IP=$(kubectl get svc frontend-service -n $(k8sNamespace) -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
-                        if [ -z "$FRONTEND_IP" ]; then
-                          echo "Frontend LoadBalancer IP not assigned yet (Attempt $((RETRY_COUNT+1))/$MAX_RETRIES). Waiting 30s..."
-                          sleep 30
-                        fi
-                        RETRY_COUNT=$((RETRY_COUNT+1))
-                      done
-                      if [ -n "$FRONTEND_IP" ]; then
-                        echo "✅ Frontend Endpoint (LoadBalancer): http://$FRONTEND_IP"
-                      else
-                        echo "⚠️ WARNING: Frontend LoadBalancer IP could not be retrieved after waiting."
-                        echo "   Check 'kubectl get svc frontend-service -n $(k8sNamespace) -o wide' for status."
-                      fi
-                      echo ""
-                      echo "Checking API Service Cluster IPs (Internal Access):"
-                      for api_svc in auth-api-service users-api-service todos-api-service; do
-                        CLUSTER_IP=$(kubectl get svc $api_svc -n $(k8sNamespace) -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
-                        PORT=$(kubectl get svc $api_svc -n $(k8sNamespace) -o jsonpath='{.spec.ports[0].port}' 2>/dev/null)
-                        if [ -n "$CLUSTER_IP" ] && [ "$CLUSTER_IP" != "<none>" ]; then
-                          echo "   - $api_svc: ClusterIP $CLUSTER_IP on port $PORT (Accessible within the cluster)"
-                        else
-                          echo "   - $api_svc: Could not retrieve ClusterIP or service not found/headless."
-                        fi
-                      done
-                      echo ""
-                      echo "=================================================="
+                    connectionType: 'Kubernetes Service Connection'
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    namespace: '$(k8sNamespace)'
+                    command: 'wait'
+                    arguments: '--for=condition=available deployment --all --timeout=300s'
+
+                - task: Kubectl@1
+                  displayName: 'List Deployments'
+                  inputs:
+                    connectionType: 'Kubernetes Service Connection'
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    namespace: '$(k8sNamespace)'
+                    command: 'get'
+                    arguments: 'deployment'
+
+                - task: Kubectl@1
+                  displayName: 'List Pods'
+                  inputs:
+                    connectionType: 'Kubernetes Service Connection'
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    namespace: '$(k8sNamespace)'
+                    command: 'get'
+                    arguments: 'pods -o wide'
+
+                - task: Kubectl@1
+                  displayName: 'List Services'
+                  inputs:
+                    connectionType: 'Kubernetes Service Connection'
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    namespace: '$(k8sNamespace)'
+                    command: 'get'
+                    arguments: 'svc -o wide'
 
                 # STEP 8: Additional Debugging for Failing Pods (If any)
                 - task: Bash@3
                   displayName: 'Debug Failing Pods (if any)'
                   condition: always()
-                  # ... (script remains the same) ...
                   inputs:
                     targetType: 'inline'
                     script: |
