@@ -309,51 +309,7 @@ stages:
                     namespace: $(k8sNamespace)
                     manifests: |
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/frontend-deployment.yaml
-                      $(Build.SourcesDirectory)/$(k8sManifestPath)/frontend-service.yaml
-
-                # --- FIXED STEP 7: Wait and List Resources via Kubectl@1 ---
-                - task: Kubectl@1
-                  displayName: 'Wait for all deployments to become available'
-                  condition: always() # Run even if previous steps failed partially, to see the state
-                  inputs:
-                    connectionType: 'Kubernetes Service Connection'
-                    kubernetesServiceConnection: '$(aksServiceConnection)'
-                    namespace: '$(k8sNamespace)'
-                    command: 'wait'
-                    # Correct syntax: kubectl wait <resource> --all --for=<condition>
-                    arguments: 'deployment --all --for=condition=available --timeout=300s'
-                    # Optional: Ignore exit code 1 if timeout occurs but you want pipeline to proceed
-                    # ignoreReturnCode: true
-
-                - task: Kubectl@1
-                  displayName: 'List Deployments'
-                  condition: always()
-                  inputs:
-                    connectionType: 'Kubernetes Service Connection'
-                    kubernetesServiceConnection: '$(aksServiceConnection)'
-                    namespace: '$(k8sNamespace)'
-                    command: 'get'
-                    arguments: 'deployment'
-
-                - task: Kubectl@1
-                  displayName: 'List Pods'
-                  condition: always()
-                  inputs:
-                    connectionType: 'Kubernetes Service Connection'
-                    kubernetesServiceConnection: '$(aksServiceConnection)'
-                    namespace: '$(k8sNamespace)'
-                    command: 'get'
-                    arguments: 'pods -o wide'
-
-                - task: Kubectl@1
-                  displayName: 'List Services'
-                  condition: always()
-                  inputs:
-                    connectionType: 'Kubernetes Service Connection'
-                    kubernetesServiceConnection: '$(aksServiceConnection)'
-                    namespace: '$(k8sNamespace)'
-                    command: 'get'
-                    arguments: 'svc -o wide'
+                      $(Build.SourcesDirectory)/$(k8sManifestPath)/frontend-service.yaml               
 
                 # --- STEP 8: Additional Debugging for Failing Pods (If any) ---
                 - task: Bash@3
