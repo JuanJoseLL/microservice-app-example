@@ -217,12 +217,12 @@ stages:
                     namespace: $(k8sNamespace)
                     manifests: '$(Build.SourcesDirectory)/$(k8sManifestPath)/app-configmap.yaml'
 
-                # --- STEP 6: Conditional Service Deployments (using direct dependency outputs) ---
+                # --- STEP 6: Conditional Service Deployments (using revised stageDependencies syntax) ---
 
-                - task: KubernetesManifest@1 # Updated task version
+                - task: KubernetesManifest@1
                   displayName: Apply Auth API Manifests (if changed)
-                  # Use stageDependencies context for cross-stage outputs from matrix jobs
-                  condition: eq(stageDependencies.BuildAndPush.BuildPushMatrix.outputs['AuthApi.DetectChanges.ShouldBuild'], 'true')
+                  # Use stageDependencies with JobName_MatrixInstance syntax
+                  condition: eq(stageDependencies.BuildAndPush.BuildPushMatrix_AuthApi.outputs['DetectChanges.ShouldBuild'], 'true')
                   inputs:
                     action: 'deploy'
                     kubernetesServiceConnection: '$(aksServiceConnection)'
@@ -231,10 +231,10 @@ stages:
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/auth-api-deployment.yaml
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/auth-api-service.yaml
 
-                - task: KubernetesManifest@1 # Updated task version
+                - task: KubernetesManifest@1
                   displayName: Apply Users API Manifests (if changed)
-                  # Use stageDependencies context for cross-stage outputs from matrix jobs
-                  condition: eq(stageDependencies.BuildAndPush.BuildPushMatrix.outputs['UsersApi.DetectChanges.ShouldBuild'], 'true')
+                  # Use stageDependencies with JobName_MatrixInstance syntax
+                  condition: eq(stageDependencies.BuildAndPush.BuildPushMatrix_UsersApi.outputs['DetectChanges.ShouldBuild'], 'true')
                   inputs:
                     action: 'deploy'
                     kubernetesServiceConnection: '$(aksServiceConnection)'
@@ -243,10 +243,10 @@ stages:
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/users-api-deployment.yaml
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/users-api-service.yaml
 
-                - task: KubernetesManifest@1 # Updated task version
+                - task: KubernetesManifest@1
                   displayName: Apply Todos API Manifests (if changed)
-                  # Use stageDependencies context for cross-stage outputs from matrix jobs
-                  condition: eq(stageDependencies.BuildAndPush.BuildPushMatrix.outputs['TodosApi.DetectChanges.ShouldBuild'], 'true')
+                  # Use stageDependencies with JobName_MatrixInstance syntax
+                  condition: eq(stageDependencies.BuildAndPush.BuildPushMatrix_TodosApi.outputs['DetectChanges.ShouldBuild'], 'true')
                   inputs:
                     action: 'deploy'
                     kubernetesServiceConnection: '$(aksServiceConnection)'
@@ -255,10 +255,10 @@ stages:
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/todos-api-deployment.yaml
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/todos-api-service.yaml
 
-                - task: KubernetesManifest@1 # Updated task version
+                - task: KubernetesManifest@1
                   displayName: Apply Log Processor Manifests (if changed)
-                  # Use stageDependencies context for cross-stage outputs from matrix jobs
-                  condition: eq(stageDependencies.BuildAndPush.BuildPushMatrix.outputs['LogProcessor.DetectChanges.ShouldBuild'], 'true')
+                  # Use stageDependencies with JobName_MatrixInstance syntax
+                  condition: eq(stageDependencies.BuildAndPush.BuildPushMatrix_LogProcessor.outputs['DetectChanges.ShouldBuild'], 'true')
                   inputs:
                     action: 'deploy'
                     kubernetesServiceConnection: '$(aksServiceConnection)'
@@ -266,10 +266,10 @@ stages:
                     manifests: |
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/log-processor-deployment.yaml # Assuming no service needed or it's separate
 
-                - task: KubernetesManifest@1 # Updated task version
+                - task: KubernetesManifest@1
                   displayName: Apply Frontend Manifests (if changed)
-                  # Use stageDependencies context for cross-stage outputs from matrix jobs
-                  condition: eq(stageDependencies.BuildAndPush.BuildPushMatrix.outputs['Frontend.DetectChanges.ShouldBuild'], 'true')
+                  # Use stageDependencies with JobName_MatrixInstance syntax
+                  condition: eq(stageDependencies.BuildAndPush.BuildPushMatrix_Frontend.outputs['DetectChanges.ShouldBuild'], 'true')
                   inputs:
                     action: 'deploy'
                     kubernetesServiceConnection: '$(aksServiceConnection)'
