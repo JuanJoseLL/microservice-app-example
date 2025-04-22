@@ -42,7 +42,7 @@ def create_redis_connection(redis_host, redis_port, redis_channel, redis_passwor
         pubsub = redis_client.pubsub()
         pubsub.subscribe([redis_channel])
         logger.info(f"Subscribed to channel: {redis_channel}")
-        
+        logger.info("Waiting for messages...")
         return pubsub
     except redis.exceptions.ConnectionError as e:
         logger.error(f"Redis connection error: {e}")
