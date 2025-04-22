@@ -317,7 +317,7 @@ stages:
                   condition: always() # Run even if previous steps failed partially, to see the state
                   inputs:
                     connectionType: 'Kubernetes Service Connection'
-                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    kubernetesServiceEndpoint: '$(aksServiceConnection)'
                     namespace: '$(k8sNamespace)'
                     command: 'wait'
                     # Correct syntax: kubectl wait <resource> --all --for=<condition>
@@ -330,7 +330,7 @@ stages:
                   condition: always()
                   inputs:
                     connectionType: 'Kubernetes Service Connection'
-                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    kubernetesServiceEndpoint: '$(aksServiceConnection)'
                     namespace: '$(k8sNamespace)'
                     command: 'get'
                     arguments: 'deployment'
@@ -340,7 +340,7 @@ stages:
                   condition: always()
                   inputs:
                     connectionType: 'Kubernetes Service Connection'
-                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    kubernetesServiceEndpoint: '$(aksServiceConnection)'
                     namespace: '$(k8sNamespace)'
                     command: 'get'
                     arguments: 'pods -o wide'
@@ -350,53 +350,9 @@ stages:
                   condition: always()
                   inputs:
                     connectionType: 'Kubernetes Service Connection'
-                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    kubernetesServiceEndpoint: '$(aksServiceConnection)'
                     namespace: '$(k8sNamespace)'
                     command: 'get'
                     arguments: 'svc -o wide'
 
-                # --- STEP 8: Additional Debugging for Failing Pods (If any) ---
-                - task: Bash@3
-                  displayName: 'Debug Failing Pods (if any)'
-                  # Run this only if the wait task failed or previous steps had issues
-                  condition: failed() # Only run if something upstream failed
-                  inputs:
-                    targetType: 'inline'
-                    script: |
-                      echo "==== Checking for non-Running/Ready Pods in namespace $(k8sNamespace) ===="
-                      # Ensure kubectl is available in the path or use the full path if needed
-                      # Use the service connection's kubeconfig if kubectl is not pre-configured
-                      # This assumes kubectl is configured by the AKS service connection context
-
-                      # Get pods not in Running state OR Running but not Ready
-                      ISSUES=$(kubectl get pods -n $(k8sNamespace) --no-headers -o custom-columns=NAME:.metadata.name,PHASE:.status.phase,READY_STATUS:.status.containerStatuses[*].ready | grep -v -E "Running.*true" || true)
-
-                      if [ -z "$ISSUES" ]; then
-                        echo "All pods appear to be Running and Ready based on initial check."
-                        # You might still want to proceed if the wait task timed out for other reasons
-                        exit 0 # Exit successfully if no obvious issues found here
-                      fi
-
-                      echo "Found Pods with potential issues:"
-                      echo "$ISSUES"
-                      echo ""
-
-                      echo "==== Describe and Log Pods with Issues ===="
-                      # Iterate through names of pods identified above
-                      echo "$ISSUES" | awk '{print $1}' | while IFS= read -r pod_name; do
-                        if [ -z "$pod_name" ]; then continue; fi
-                        echo ""
-                        echo "---- Describing $pod_name ----"
-                        kubectl describe pod "$pod_name" -n $(k8sNamespace) || echo "Failed to describe $pod_name"
-                        echo ""
-                        echo "---- Current Logs for $pod_name ----"
-                        kubectl logs "$pod_name" -n $(k8sNamespace) --all-containers=true --tail=100 || echo "Failed to get current logs for $pod_name"
-                        echo ""
-                        echo "---- Previous Logs for $pod_name (if restarted) ----"
-                        kubectl logs "$pod_name" -n $(k8sNamespace) --all-containers=true --previous --tail=100 || echo "No previous logs or failed to get previous logs for $pod_name"
-                        echo "-------------------------------------"
-                        echo ""
-                      done
-                      echo "Found pods with issues. Check logs above. Marking task as failed."
-                      # Explicitly fail the task if issues were found
-                      exit 1
+                
