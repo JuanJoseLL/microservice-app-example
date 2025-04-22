@@ -180,7 +180,7 @@ stages:
                       Build.BuildId = $(Build.BuildId) # Image tag
 
                 # STEP 3: Ensure Namespace exists
-                - task: KubernetesManifest@1 # Updated task version
+                - task: KubernetesManifest@0
                   displayName: Ensure Namespace $(k8sNamespace) exists
                   inputs:
                     action: 'deploy'
@@ -188,7 +188,7 @@ stages:
                     manifests: '$(Build.SourcesDirectory)/$(k8sManifestPath)/namespace.yaml'
 
                 # STEP 4: Create/Update Secrets
-                - task: KubernetesManifest@1 # Updated task version
+                - task: KubernetesManifest@0
                   displayName: Create/Update Redis Secret ($(k8sRedisSecretName))
                   inputs:
                     action: 'createSecret'
@@ -197,8 +197,9 @@ stages:
                     secretType: 'generic'
                     secretName: $(k8sRedisSecretName)
                     secretArguments: '--from-literal=redisHost=$(redisHostName) --from-literal=redisKey=$(redisPrimaryKey)' # Ensure these vars are in the group
+                    force: true
 
-                - task: KubernetesManifest@1 # Updated task version
+                - task: KubernetesManifest@0
                   displayName: Create/Update App Secrets (JWT) ($(k8sAppSecretName))
                   inputs:
                     action: 'createSecret'
@@ -207,9 +208,10 @@ stages:
                     secretType: 'generic'
                     secretName: $(k8sAppSecretName)
                     secretArguments: '--from-literal=jwtSecret=$(jwtSecretValue)' # Ensure this var is in the group
+                    force: true
 
                 # STEP 5: Apply App ConfigMap
-                - task: KubernetesManifest@1 # Updated task version
+                - task: KubernetesManifest@0
                   displayName: Apply App ConfigMap
                   inputs:
                     action: 'deploy'
@@ -217,12 +219,47 @@ stages:
                     namespace: $(k8sNamespace)
                     manifests: '$(Build.SourcesDirectory)/$(k8sManifestPath)/app-configmap.yaml'
 
-                # --- STEP 6: Conditional Service Deployments (using revised stageDependencies syntax) ---
+                # --- FIXED STEP: Prepare Deployment Flags (using correct dependency syntax) ---
+                - task: Bash@3
+                  name: PrepareDeployFlags
+                  displayName: Prepare Deployment Flags
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      echo "Preparing deployment flags..."
+                      # Default flags to false
+                      echo "##vso[task.setvariable variable=DeployAuthApi]false"
+                      echo "##vso[task.setvariable variable=DeployUsersApi]false"
+                      echo "##vso[task.setvariable variable=DeployTodosApi]false"
+                      echo "##vso[task.setvariable variable=DeployLogProcessor]false"
+                      echo "##vso[task.setvariable variable=DeployFrontend]false"
+
+                      # Access output variables from the matrix jobs using the correct syntax
+                      # Format: dependencies.<StageName>.outputs['<JobName>_<MatrixValue>.<TaskName>.<VariableName>']
+                      auth_built="$(dependencies.BuildAndPush.outputs['BuildPushMatrix_AuthApi.DetectChanges.ShouldBuild'])"
+                      users_built="$(dependencies.BuildAndPush.outputs['BuildPushMatrix_UsersApi.DetectChanges.ShouldBuild'])"
+                      todos_built="$(dependencies.BuildAndPush.outputs['BuildPushMatrix_TodosApi.DetectChanges.ShouldBuild'])"
+                      logproc_built="$(dependencies.BuildAndPush.outputs['BuildPushMatrix_LogProcessor.DetectChanges.ShouldBuild'])"
+                      frontend_built="$(dependencies.BuildAndPush.outputs['BuildPushMatrix_Frontend.DetectChanges.ShouldBuild'])"
+
+                      echo "Build Flags: Auth=$auth_built, Users=$users_built, Todos=$todos_built, LogProc=$logproc_built, Frontend=$frontend_built"
+
+                      # Set deploy flags for services with changes OR if the ShouldBuild variable is missing (e.g., skipped stage) treat as needing deploy (optional safety)
+                      # Using direct variable comparison which should work correctly now
+                      if [[ "$auth_built" == "true" ]]; then echo "##vso[task.setvariable variable=DeployAuthApi]true"; fi
+                      if [[ "$users_built" == "true" ]]; then echo "##vso[task.setvariable variable=DeployUsersApi]true"; fi
+                      if [[ "$todos_built" == "true" ]]; then echo "##vso[task.setvariable variable=DeployTodosApi]true"; fi
+                      if [[ "$logproc_built" == "true" ]]; then echo "##vso[task.setvariable variable=DeployLogProcessor]true"; fi
+                      if [[ "$frontend_built" == "true" ]]; then echo "##vso[task.setvariable variable=DeployFrontend]true"; fi
+
+                      echo "Deploy Flags Set: Auth=$(DeployAuthApi), Users=$(DeployUsersApi), Todos=$(DeployTodosApi), LogProc=$(DeployLogProcessor), Frontend=$(DeployFrontend)"
+
+
+                # --- STEP 6: Conditional Service Deployments (using variables set above) ---
 
                 - task: KubernetesManifest@1
                   displayName: Apply Auth API Manifests (if changed)
-                  # Use stageDependencies with JobName_MatrixInstance syntax
-                  condition: eq(stageDependencies.BuildAndPush.BuildPushMatrix_AuthApi.outputs['DetectChanges.ShouldBuild'], 'true')
+                  condition: eq(variables['DeployAuthApi'], 'true')
                   inputs:
                     action: 'deploy'
                     kubernetesServiceConnection: '$(aksServiceConnection)'
@@ -233,8 +270,7 @@ stages:
 
                 - task: KubernetesManifest@1
                   displayName: Apply Users API Manifests (if changed)
-                  # Use stageDependencies with JobName_MatrixInstance syntax
-                  condition: eq(stageDependencies.BuildAndPush.BuildPushMatrix_UsersApi.outputs['DetectChanges.ShouldBuild'], 'true')
+                  condition: eq(variables['DeployUsersApi'], 'true')
                   inputs:
                     action: 'deploy'
                     kubernetesServiceConnection: '$(aksServiceConnection)'
@@ -245,8 +281,7 @@ stages:
 
                 - task: KubernetesManifest@1
                   displayName: Apply Todos API Manifests (if changed)
-                  # Use stageDependencies with JobName_MatrixInstance syntax
-                  condition: eq(stageDependencies.BuildAndPush.BuildPushMatrix_TodosApi.outputs['DetectChanges.ShouldBuild'], 'true')
+                  condition: eq(variables['DeployTodosApi'], 'true')
                   inputs:
                     action: 'deploy'
                     kubernetesServiceConnection: '$(aksServiceConnection)'
@@ -257,8 +292,7 @@ stages:
 
                 - task: KubernetesManifest@1
                   displayName: Apply Log Processor Manifests (if changed)
-                  # Use stageDependencies with JobName_MatrixInstance syntax
-                  condition: eq(stageDependencies.BuildAndPush.BuildPushMatrix_LogProcessor.outputs['DetectChanges.ShouldBuild'], 'true')
+                  condition: eq(variables['DeployLogProcessor'], 'true')
                   inputs:
                     action: 'deploy'
                     kubernetesServiceConnection: '$(aksServiceConnection)'
@@ -268,8 +302,7 @@ stages:
 
                 - task: KubernetesManifest@1
                   displayName: Apply Frontend Manifests (if changed)
-                  # Use stageDependencies with JobName_MatrixInstance syntax
-                  condition: eq(stageDependencies.BuildAndPush.BuildPushMatrix_Frontend.outputs['DetectChanges.ShouldBuild'], 'true')
+                  condition: eq(variables['DeployFrontend'], 'true')
                   inputs:
                     action: 'deploy'
                     kubernetesServiceConnection: '$(aksServiceConnection)'
@@ -278,3 +311,92 @@ stages:
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/frontend-deployment.yaml
                       $(Build.SourcesDirectory)/$(k8sManifestPath)/frontend-service.yaml
 
+                # --- FIXED STEP 7: Wait and List Resources via Kubernetes@1 ---
+                - task: Kubernetes@1
+                  displayName: 'Wait for all deployments to become available'
+                  condition: always() # Run even if previous steps failed partially, to see the state
+                  inputs:
+                    connectionType: 'Kubernetes Service Connection'
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    namespace: '$(k8sNamespace)'
+                    command: 'wait'
+                    # Correct syntax: kubectl wait <resource> --all --for=<condition>
+                    arguments: 'deployment --all --for=condition=available --timeout=300s'
+                    # Optional: Ignore exit code 1 if timeout occurs but you want pipeline to proceed
+                    # ignoreReturnCode: true
+
+                - task: Kubernetes@1
+                  displayName: 'List Deployments'
+                  condition: always()
+                  inputs:
+                    connectionType: 'Kubernetes Service Connection'
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    namespace: '$(k8sNamespace)'
+                    command: 'get'
+                    arguments: 'deployment'
+
+                - task: Kubernetes@1
+                  displayName: 'List Pods'
+                  condition: always()
+                  inputs:
+                    connectionType: 'Kubernetes Service Connection'
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    namespace: '$(k8sNamespace)'
+                    command: 'get'
+                    arguments: 'pods -o wide'
+
+                - task: Kubernetes@1
+                  displayName: 'List Services'
+                  condition: always()
+                  inputs:
+                    connectionType: 'Kubernetes Service Connection'
+                    kubernetesServiceConnection: '$(aksServiceConnection)'
+                    namespace: '$(k8sNamespace)'
+                    command: 'get'
+                    arguments: 'svc -o wide'
+
+                # --- STEP 8: Additional Debugging for Failing Pods (If any) ---
+                - task: Bash@3
+                  displayName: 'Debug Failing Pods (if any)'
+                  # Run this only if the wait task failed or previous steps had issues
+                  condition: failed() # Only run if something upstream failed
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      echo "==== Checking for non-Running/Ready Pods in namespace $(k8sNamespace) ===="
+                      # Ensure kubectl is available in the path or use the full path if needed
+                      # Use the service connection's kubeconfig if kubectl is not pre-configured
+                      # This assumes kubectl is configured by the AKS service connection context
+
+                      # Get pods not in Running state OR Running but not Ready
+                      ISSUES=$(kubectl get pods -n $(k8sNamespace) --no-headers -o custom-columns=NAME:.metadata.name,PHASE:.status.phase,READY_STATUS:.status.containerStatuses[*].ready | grep -v -E "Running.*true" || true)
+
+                      if [ -z "$ISSUES" ]; then
+                        echo "All pods appear to be Running and Ready based on initial check."
+                        # You might still want to proceed if the wait task timed out for other reasons
+                        exit 0 # Exit successfully if no obvious issues found here
+                      fi
+
+                      echo "Found Pods with potential issues:"
+                      echo "$ISSUES"
+                      echo ""
+
+                      echo "==== Describe and Log Pods with Issues ===="
+                      # Iterate through names of pods identified above
+                      echo "$ISSUES" | awk '{print $1}' | while IFS= read -r pod_name; do
+                        if [ -z "$pod_name" ]; then continue; fi
+                        echo ""
+                        echo "---- Describing $pod_name ----"
+                        kubectl describe pod "$pod_name" -n $(k8sNamespace) || echo "Failed to describe $pod_name"
+                        echo ""
+                        echo "---- Current Logs for $pod_name ----"
+                        kubectl logs "$pod_name" -n $(k8sNamespace) --all-containers=true --tail=100 || echo "Failed to get current logs for $pod_name"
+                        echo ""
+                        echo "---- Previous Logs for $pod_name (if restarted) ----"
+                        kubectl logs "$pod_name" -n $(k8sNamespace) --all-containers=true --previous --tail=100 || echo "No previous logs or failed to get previous logs for $pod_name"
+                        echo "-------------------------------------"
+                        echo ""
+                      done
+                      echo "Found pods with issues. Check logs above. Marking task as failed."
+                      # Explicitly fail the task if issues were found
+                      exit 1
