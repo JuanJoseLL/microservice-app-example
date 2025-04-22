@@ -219,7 +219,7 @@ stages:
                     namespace: $(k8sNamespace)
                     manifests: '$(Build.SourcesDirectory)/$(k8sManifestPath)/app-configmap.yaml'
 
-                # --- FIXED STEP: Prepare Deployment Flags (using correct dependency syntax) ---
+                
                 - task: Bash@3
                   name: PrepareDeployFlags
                   displayName: Prepare Deployment Flags

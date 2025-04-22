@@ -21,7 +21,7 @@ spec:
       - name: log-processor
         image: #{acrName}#.azurecr.io/#{imageLogProcessor}#:#{Build.BuildId}#
         env:
-        - name: REDIS_HOST # Read from the 'redis-secret' secretsaxsaxfe
+        - name: REDIS_HOST # Read from the 'redis-secret' secretsaxsaxfewdad
           valueFrom:
             secretKeyRef:
               name: redis-secret

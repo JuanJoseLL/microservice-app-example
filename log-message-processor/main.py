@@ -38,7 +38,7 @@ def create_redis_connection(redis_host, redis_port, redis_channel, redis_passwor
         redis_client.ping()
         logger.info(f"Successfully connected to Redis at {redis_host}:{redis_port}")
         
-        # Create PubSub
+        # Create PubSubwsw
         pubsub = redis_client.pubsub()
         pubsub.subscribe([redis_channel])
         logger.info(f"Subscribed to channel: {redis_channel}")
