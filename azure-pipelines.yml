@@ -153,6 +153,7 @@ stages:
                       else
                         echo "ERROR: Directory $(Build.SourcesDirectory)/$(k8sManifestPath) NOT FOUND."
                         exit 1
+                      fi
 
                 # STEP 2: Replace Tokens
                 - task: replacetokens@5
