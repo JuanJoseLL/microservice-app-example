@@ -143,7 +143,7 @@ if __name__ == '__main__':
             logger.info(f"Retrying in {retry_delay} seconds...")
             time.sleep(retry_delay)
             # Exponential backoff for retry delayfe
-            retry_delay = min(retry_delay * 2, 60)  # Max 60 seconds
+            retry_delay = min(retry_delay * 2, 60)  # Max 60 secondsxxxx
             logger.info(f"Retry delay increased to {retry_delay} seconds")
         else:
             logger.error("Escaped from the retry loop")

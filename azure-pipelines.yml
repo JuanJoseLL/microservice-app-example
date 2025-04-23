@@ -223,13 +223,13 @@ stages:
                 - task: Bash@3
                   name: PrepareDeployFlags
                   displayName: Prepare Deployment Flags
-                  # Map the stage dependency outputs to environment variables for this task
+                  # Map the STAGE dependency outputs to environment variables for this task
                   env:
-                    AUTH_BUILT: $(dependencies.BuildAndPush.outputs['BuildPushMatrix_AuthApi.DetectChanges.ShouldBuild'])
-                    USERS_BUILT: $(dependencies.BuildAndPush.outputs['BuildPushMatrix_UsersApi.DetectChanges.ShouldBuild'])
-                    TODOS_BUILT: $(dependencies.BuildAndPush.outputs['BuildPushMatrix_TodosApi.DetectChanges.ShouldBuild'])
-                    LOGPROC_BUILT: $(dependencies.BuildAndPush.outputs['BuildPushMatrix_LogProcessor.DetectChanges.ShouldBuild'])
-                    FRONTEND_BUILT: $(dependencies.BuildAndPush.outputs['BuildPushMatrix_Frontend.DetectChanges.ShouldBuild'])
+                    AUTH_BUILT: $[ stageDependencies.BuildAndPush.BuildPushMatrix.outputs['BuildPushMatrix_AuthApi.DetectChanges.ShouldBuild'] ]
+                    USERS_BUILT: $[ stageDependencies.BuildAndPush.BuildPushMatrix.outputs['BuildPushMatrix_UsersApi.DetectChanges.ShouldBuild'] ]
+                    TODOS_BUILT: $[ stageDependencies.BuildAndPush.BuildPushMatrix.outputs['BuildPushMatrix_TodosApi.DetectChanges.ShouldBuild'] ]
+                    LOGPROC_BUILT: $[ stageDependencies.BuildAndPush.BuildPushMatrix.outputs['BuildPushMatrix_LogProcessor.DetectChanges.ShouldBuild'] ]
+                    FRONTEND_BUILT: $[ stageDependencies.BuildAndPush.BuildPushMatrix.outputs['BuildPushMatrix_Frontend.DetectChanges.ShouldBuild'] ]
                   inputs:
                     targetType: 'inline'
                     script: |
@@ -242,7 +242,6 @@ stages:
                       echo "##vso[task.setvariable variable=DeployFrontend]false"
 
                       # Access the environment variables populated by the 'env:' block above
-                      # Note: Bash convention often uses uppercase for env vars
                       echo "Build Flags Read from Env: Auth='$AUTH_BUILT', Users='$USERS_BUILT', Todos='$TODOS_BUILT', LogProc='$LOGPROC_BUILT', Frontend='$FRONTEND_BUILT'"
 
                       # Use standard Bash comparison with the environment variables
