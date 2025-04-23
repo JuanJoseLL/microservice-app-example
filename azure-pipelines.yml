@@ -139,7 +139,7 @@ stages:
               steps:
                 # STEP 0: Checkout
                 - checkout: self
-                  # No need for fetchDepth here unless you need history in deploy stage
+                  fetchDepth: 0 
                   displayName: Checkout Repository
 
                 # STEP 1: Debug K8s Directory Check (keep for verification)
@@ -219,21 +219,15 @@ stages:
                     namespace: $(k8sNamespace)
                     manifests: '$(Build.SourcesDirectory)/$(k8sManifestPath)/app-configmap.yaml'
 
-                
-                - task: Bash@3
-                  name: PrepareDeployFlags
-                  displayName: Prepare Deployment Flags
-                  # Map the STAGE dependency outputs to environment variables for this task
-                  env:
-                    AUTH_BUILT: $[ stageDependencies.BuildAndPush.BuildPushMatrix.outputs['BuildPushMatrix_AuthApi.DetectChanges.ShouldBuild'] ]
-                    USERS_BUILT: $[ stageDependencies.BuildAndPush.BuildPushMatrix.outputs['BuildPushMatrix_UsersApi.DetectChanges.ShouldBuild'] ]
-                    TODOS_BUILT: $[ stageDependencies.BuildAndPush.BuildPushMatrix.outputs['BuildPushMatrix_TodosApi.DetectChanges.ShouldBuild'] ]
-                    LOGPROC_BUILT: $[ stageDependencies.BuildAndPush.BuildPushMatrix.outputs['BuildPushMatrix_LogProcessor.DetectChanges.ShouldBuild'] ]
-                    FRONTEND_BUILT: $[ stageDependencies.BuildAndPush.BuildPushMatrix.outputs['BuildPushMatrix_Frontend.DetectChanges.ShouldBuild'] ]
+                 -task: Bash@3
+                  name: DetectChangesAndSetDeployFlags
+                  displayName: Detect Changes and Set Deploy Flags
                   inputs:
                     targetType: 'inline'
                     script: |
-                      echo "Preparing deployment flags..."
+                      set -e # Exit on error
+                      echo "Detecting changes for deployment..."
+
                       # Default flags to false
                       echo "##vso[task.setvariable variable=DeployAuthApi]false"
                       echo "##vso[task.setvariable variable=DeployUsersApi]false"
@@ -241,27 +235,60 @@ stages:
                       echo "##vso[task.setvariable variable=DeployLogProcessor]false"
                       echo "##vso[task.setvariable variable=DeployFrontend]false"
 
-                      # Access the environment variables populated by the 'env:' block above
-                      echo "Build Flags Read from Env: Auth='$AUTH_BUILT', Users='$USERS_BUILT', Todos='$TODOS_BUILT', LogProc='$LOGPROC_BUILT', Frontend='$FRONTEND_BUILT'"
-
-                      # Use standard Bash comparison with the environment variables
-                      if [[ "$AUTH_BUILT" == "true" ]]; then echo "##vso[task.setvariable variable=DeployAuthApi]true"; fi
-                      if [[ "$USERS_BUILT" == "true" ]]; then echo "##vso[task.setvariable variable=DeployUsersApi]true"; fi
-                      if [[ "$TODOS_BUILT" == "true" ]]; then echo "##vso[task.setvariable variable=DeployTodosApi]true"; fi
-                      if [[ "$LOGPROC_BUILT" == "true" ]]; then echo "##vso[task.setvariable variable=DeployLogProcessor]true"; fi
-                      if [[ "$FRONTEND_BUILT" == "true" ]]; then echo "##vso[task.setvariable variable=DeployFrontend]true"; fi
-
-                      # Echo the VSO variables *after* they are set (using ADO macro syntax for logging)
-                      echo "Deploy Flags Set: Auth=$(DeployAuthApi), Users=$(DeployUsersApi), Todos=$(DeployTodosApi), LogProc=$(DeployLogProcessor), Frontend=$(DeployFrontend)"
-
-                      # Debugging with the environment variable
-                      echo "DEBUG: Raw LOGPROC_BUILT env var value: |$LOGPROC_BUILT|"
-
-                      if [[ "$LOGPROC_BUILT" == "true" ]]; then
-                        echo "DEBUG: Setting DeployLogProcessor to true based on env var."
+                      # --- Check Auth API ---
+                      echo "Checking for changes in $(imageAuthApi)/"
+                      if ! git diff --quiet HEAD~1 HEAD -- "$(Build.SourcesDirectory)/$(imageAuthApi)/"; then
+                        echo "Changes detected in $(imageAuthApi). Setting DeployAuthApi=true."
+                        echo "##vso[task.setvariable variable=DeployAuthApi]true"
                       else
-                        echo "DEBUG: Condition for DeployLogProcessor is FALSE. LOGPROC_BUILT env var was: |$LOGPROC_BUILT|"
+                        echo "No changes detected in $(imageAuthApi)."
                       fi
+
+                      # --- Check Users API ---
+                      echo "Checking for changes in $(imageUsersApi)/"
+                      if ! git diff --quiet HEAD~1 HEAD -- "$(Build.SourcesDirectory)/$(imageUsersApi)/"; then
+                        echo "Changes detected in $(imageUsersApi). Setting DeployUsersApi=true."
+                        echo "##vso[task.setvariable variable=DeployUsersApi]true"
+                      else
+                        echo "No changes detected in $(imageUsersApi)."
+                      fi
+
+                      # --- Check Todos API ---
+                      echo "Checking for changes in $(imageTodosApi)/"
+                      if ! git diff --quiet HEAD~1 HEAD -- "$(Build.SourcesDirectory)/$(imageTodosApi)/"; then
+                        echo "Changes detected in $(imageTodosApi). Setting DeployTodosApi=true."
+                        echo "##vso[task.setvariable variable=DeployTodosApi]true"
+                      else
+                        echo "No changes detected in $(imageTodosApi)."
+                      fi
+
+                      # --- Check Log Processor ---
+                      echo "Checking for changes in $(imageLogProcessor)/"
+                      if ! git diff --quiet HEAD~1 HEAD -- "$(Build.SourcesDirectory)/$(imageLogProcessor)/"; then
+                        echo "Changes detected in $(imageLogProcessor). Setting DeployLogProcessor=true."
+                        echo "##vso[task.setvariable variable=DeployLogProcessor]true"
+                      else
+                        echo "No changes detected in $(imageLogProcessor)."
+                      fi
+
+                      # --- Check Frontend ---
+                      echo "Checking for changes in $(imageFrontend)/"
+                      if ! git diff --quiet HEAD~1 HEAD -- "$(Build.SourcesDirectory)/$(imageFrontend)/"; then
+                        echo "Changes detected in $(imageFrontend). Setting DeployFrontend=true."
+                        echo "##vso[task.setvariable variable=DeployFrontend]true"
+                      else
+                        echo "No changes detected in $(imageFrontend)."
+                      fi
+
+                      # --- Log Final Flags ---
+                      echo "-----------------------------------------"
+                      echo "Final Deploy Flags Set in this Job:"
+                      echo " DeployAuthApi = $(DeployAuthApi)"
+                      echo " DeployUsersApi = $(DeployUsersApi)"
+                      echo " DeployTodosApi = $(DeployTodosApi)"
+                      echo " DeployLogProcessor = $(DeployLogProcessor)"
+                      echo " DeployFrontend = $(DeployFrontend)"
+                      echo "-----------------------------------------"
 
                 # --- STEP 6: Conditional Service Deployments (using variables set above) ---
 
