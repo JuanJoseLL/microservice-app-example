@@ -219,7 +219,7 @@ stages:
                     namespace: $(k8sNamespace)
                     manifests: '$(Build.SourcesDirectory)/$(k8sManifestPath)/app-configmap.yaml'
 
-                 -task: Bash@3
+                - task: Bash@3
                   name: DetectChangesAndSetDeployFlags
                   displayName: Detect Changes and Set Deploy Flags
                   inputs:
