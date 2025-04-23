@@ -253,7 +253,16 @@ stages:
                       if [[ "$frontend_built" == "true" ]]; then echo "##vso[task.setvariable variable=DeployFrontend]true"; fi
 
                       echo "Deploy Flags Set: Auth=$(DeployAuthApi), Users=$(DeployUsersApi), Todos=$(DeployTodosApi), LogProc=$(DeployLogProcessor), Frontend=$(DeployFrontend)"
+                      echo "DEBUG: Raw logproc_built value: |$logproc_built|" # See the exact value, including potential whitespace or casing issues
 
+                      if [[ "$logproc_built" == "true" ]]; then
+                        echo "DEBUG: Setting DeployLogProcessor to true"
+                        echo "##vso[task.setvariable variable=DeployLogProcessor]true"
+                      else
+                        echo "DEBUG: Condition for DeployLogProcessor is FALSE. logproc_built was: |$logproc_built|"
+                        # Ensure it defaults to false if not explicitly set to true
+                        echo "##vso[task.setvariable variable=DeployLogProcessor]false"
+                      fi
 
                 # --- STEP 6: Conditional Service Deployments (using variables set above) ---
 
