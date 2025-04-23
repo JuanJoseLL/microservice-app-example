@@ -227,41 +227,42 @@ stages:
                     targetType: 'inline'
                     script: |
                       echo "Preparing deployment flags..."
-                      # Default flags to false
+                      # Default flags to false using the VSO command directly
                       echo "##vso[task.setvariable variable=DeployAuthApi]false"
                       echo "##vso[task.setvariable variable=DeployUsersApi]false"
                       echo "##vso[task.setvariable variable=DeployTodosApi]false"
                       echo "##vso[task.setvariable variable=DeployLogProcessor]false"
                       echo "##vso[task.setvariable variable=DeployFrontend]false"
 
-                      # Access output variables from the matrix jobs using the correct syntax
-                      # Format: dependencies.<StageName>.outputs['<JobName>_<MatrixValue>.<TaskName>.<VariableName>']
-                      auth_built="$(dependencies.BuildAndPush.outputs['BuildPushMatrix_AuthApi.DetectChanges.ShouldBuild'])"
-                      users_built="$(dependencies.BuildAndPush.outputs['BuildPushMatrix_UsersApi.DetectChanges.ShouldBuild'])"
-                      todos_built="$(dependencies.BuildAndPush.outputs['BuildPushMatrix_TodosApi.DetectChanges.ShouldBuild'])"
-                      logproc_built="$(dependencies.BuildAndPush.outputs['BuildPushMatrix_LogProcessor.DetectChanges.ShouldBuild'])"
-                      frontend_built="$(dependencies.BuildAndPush.outputs['BuildPushMatrix_Frontend.DetectChanges.ShouldBuild'])"
+                      # Use Azure Pipelines Macro Syntax $(...) to read dependency outputs
+                      # These are expanded by Azure Pipelines *before* the script runs
+                      auth_built=$(dependencies.BuildAndPush.outputs['BuildPushMatrix_AuthApi.DetectChanges.ShouldBuild'])
+                      users_built=$(dependencies.BuildAndPush.outputs['BuildPushMatrix_UsersApi.DetectChanges.ShouldBuild'])
+                      todos_built=$(dependencies.BuildAndPush.outputs['BuildPushMatrix_TodosApi.DetectChanges.ShouldBuild'])
+                      logproc_built=$(dependencies.BuildAndPush.outputs['BuildPushMatrix_LogProcessor.DetectChanges.ShouldBuild'])
+                      frontend_built=$(dependencies.BuildAndPush.outputs['BuildPushMatrix_Frontend.DetectChanges.ShouldBuild'])
 
-                      echo "Build Flags: Auth=$auth_built, Users=$users_built, Todos=$todos_built, LogProc=$logproc_built, Frontend=$frontend_built"
+                      # Add quotes for robustness during echo, though not strictly needed if values are just 'true'/'false'
+                      echo "Build Flags Read: Auth='$auth_built', Users='$users_built', Todos='$todos_built', LogProc='$logproc_built', Frontend='$frontend_built'"
 
-                      # Set deploy flags for services with changes OR if the ShouldBuild variable is missing (e.g., skipped stage) treat as needing deploy (optional safety)
-                      # Using direct variable comparison which should work correctly now
+                      # Now use standard Bash comparison with the populated variables
                       if [[ "$auth_built" == "true" ]]; then echo "##vso[task.setvariable variable=DeployAuthApi]true"; fi
                       if [[ "$users_built" == "true" ]]; then echo "##vso[task.setvariable variable=DeployUsersApi]true"; fi
                       if [[ "$todos_built" == "true" ]]; then echo "##vso[task.setvariable variable=DeployTodosApi]true"; fi
                       if [[ "$logproc_built" == "true" ]]; then echo "##vso[task.setvariable variable=DeployLogProcessor]true"; fi
                       if [[ "$frontend_built" == "true" ]]; then echo "##vso[task.setvariable variable=DeployFrontend]true"; fi
 
+                      # Use Macro syntax again to echo the variables *set by VSO commands* in this task
+                      # These will be expanded correctly by Azure Pipelines in the log output
                       echo "Deploy Flags Set: Auth=$(DeployAuthApi), Users=$(DeployUsersApi), Todos=$(DeployTodosApi), LogProc=$(DeployLogProcessor), Frontend=$(DeployFrontend)"
-                      echo "DEBUG: Raw logproc_built value: |$logproc_built|" # See the exact value, including potential whitespace or casing issues
+
+                      # Keep your debug lines
+                      echo "DEBUG: Raw logproc_built value: |$logproc_built|" # Should now show |true| or |false|
 
                       if [[ "$logproc_built" == "true" ]]; then
-                        echo "DEBUG: Setting DeployLogProcessor to true"
-                        echo "##vso[task.setvariable variable=DeployLogProcessor]true"
+                        echo "DEBUG: Setting DeployLogProcessor to true was successful based on read value."
                       else
                         echo "DEBUG: Condition for DeployLogProcessor is FALSE. logproc_built was: |$logproc_built|"
-                        # Ensure it defaults to false if not explicitly set to true
-                        echo "##vso[task.setvariable variable=DeployLogProcessor]false"
                       fi
 
                 # --- STEP 6: Conditional Service Deployments (using variables set above) ---

@@ -128,7 +128,7 @@ if __name__ == '__main__':
                     continue
                 except redis.exceptions.ConnectionError as e:
                     logger.error(f"Connection error during message processing: {e}")
-                    break  # go reconnect
+                    break  # go reconnectdwa
                 except Exception as e:
                     logger.error(f"Unexpected error during message processing: {e}")
         
