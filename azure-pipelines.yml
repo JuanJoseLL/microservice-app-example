@@ -333,7 +333,7 @@ stages:
                     kubernetesServiceConnection: '$(aksServiceConnection)'
                     namespace: $(k8sNamespace)
                     manifests: |
-                      $(Build.SourcesDirectory)/$(k8sManifestPath)/log-processor-deployment.yaml # Assuming no service needed or it's separate
+                      $(Build.SourcesDirectory)/$(k8sManifestPath)/log-processor-deployment.yaml 
 
                 - task: KubernetesManifest@1
                   displayName: Apply Frontend Manifests (if changed)
@@ -356,7 +356,7 @@ stages:
                     namespace: '$(k8sNamespace)'
                     command: 'wait'
                     # Correct syntax: kubectl wait <resource> --all --for=<condition>
-                    arguments: 'deployment --all --for=condition=available --timeout=300s'
+                    arguments: 'deployment --all --for=condition=available --timeout=90s'
                     # Optional: Ignore exit code 1 if timeout occurs but you want pipeline to proceed
                     # ignoreReturnCode: true
 
